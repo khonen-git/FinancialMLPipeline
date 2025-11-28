@@ -3,18 +3,15 @@
 
 defaults:
   - override /assets: EURUSD
-  - override /data/bars: base_bars
-  - override /session: base_session
+  - override /session: default_fx
   - override /labeling: triple_barrier
   - override /features: base_features
-  - override /models/hmm: base_hmm
   - override /models: rf_cpu
-  - override /validation: tscv
+  - override /risk: basic
   - override /backtest: base_bt
-  - override /risk: base_risk
-  - override /reporting: base_report
+  - override /reporting: report
   - override /mlflow: local
-  - override /runtime: debug
+  - override /runtime: hardware
 
 experiment:
   name: "test_sample_eurusd"
