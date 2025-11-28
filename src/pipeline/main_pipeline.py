@@ -231,13 +231,29 @@ def run_pipeline(cfg: DictConfig):
                 rf_model = RandomForestCPU(cfg.models.random_forest)
                 rf_model.fit(X_train, y_train)
                 
-                # Evaluate
+                # Evaluate with multiple metrics (not just accuracy)
                 y_pred = rf_model.predict(X_test)
                 fold_accuracy = (y_pred == y_test).mean()
                 accuracies.append(fold_accuracy)
                 
-                logger.info(f"Fold {fold} accuracy: {fold_accuracy:.2%}")
+                # Calculate precision, recall, F1 (aligned with trading)
+                from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
+                
+                # For binary classification (+1 vs -1), use pos_label=1
+                precision = precision_score(y_test, y_pred, average='binary', pos_label=1, zero_division=0)
+                recall = recall_score(y_test, y_pred, average='binary', pos_label=1, zero_division=0)
+                f1 = f1_score(y_test, y_pred, average='binary', pos_label=1, zero_division=0)
+                
+                logger.info(f"Fold {fold} metrics:")
+                logger.info(f"  Accuracy:  {fold_accuracy:.2%}")
+                logger.info(f"  Precision: {precision:.2%} (TP when predicted +1)")
+                logger.info(f"  Recall:    {recall:.2%}")
+                logger.info(f"  F1:        {f1:.2%}")
+                
                 mlflow.log_metric(f'fold_{fold}_accuracy', fold_accuracy)
+                mlflow.log_metric(f'fold_{fold}_precision', precision)
+                mlflow.log_metric(f'fold_{fold}_recall', recall)
+                mlflow.log_metric(f'fold_{fold}_f1', f1)
             
             # Calculate mean accuracy across all folds
             if accuracies:
