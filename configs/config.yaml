@@ -8,9 +8,7 @@ defaults:
   - labeling: triple_barrier
   - features: base_features
   - models: rf_cpu
-  - models/hmm: hmm
   - risk: basic
-  - risk/monte_carlo: monte_carlo
   - backtest: base_bt
   - reporting: report
   - mlflow: local
