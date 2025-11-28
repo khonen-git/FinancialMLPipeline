@@ -68,9 +68,9 @@ def compute_triple_barrier(
     )
     
     if avg_bar_duration_sec is None:
-        # Estimate from prices DataFrame
+        # Estimate from prices DataFrame (timestamp is in index)
         if len(prices) > 1:
-            time_diff = (prices['timestamp'].iloc[-1] - prices['timestamp'].iloc[0])
+            time_diff = (prices.index[-1] - prices.index[0])
             avg_bar_duration_sec = time_diff.total_seconds() / len(prices)
         else:
             avg_bar_duration_sec = 60.0  # fallback: 1 minute
