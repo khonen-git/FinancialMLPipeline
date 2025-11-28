@@ -80,7 +80,11 @@ class BarBuilder:
             bar = self._aggregate_chunk(chunk)
             bars.append(bar)
         
-        return pd.DataFrame(bars)
+        # Create DataFrame and set timestamp as index
+        bars_df = pd.DataFrame(bars)
+        if 'timestamp' in bars_df.columns and not bars_df.empty:
+            bars_df = bars_df.set_index('timestamp')
+        return bars_df
     
     def _build_volume_bars(self, ticks: pd.DataFrame) -> pd.DataFrame:
         """Build volume bars (cumulative volume threshold).
