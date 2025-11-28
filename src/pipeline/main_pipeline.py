@@ -205,9 +205,10 @@ def run_pipeline(cfg: DictConfig):
             embargo_duration=cfg.validation.embargo_duration
         )
         
-        # Step 10: Train model (simplified, only one fold for demo)
+        # Step 10: Train model with walk-forward validation
         logger.info("Step 10: Training Random Forest")
         accuracy = 0.0  # Initialize
+        accuracies = []
         
         if len(X) > 0:
             for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
@@ -222,13 +223,17 @@ def run_pipeline(cfg: DictConfig):
                 
                 # Evaluate
                 y_pred = rf_model.predict(X_test)
-                accuracy = (y_pred == y_test).mean()
+                fold_accuracy = (y_pred == y_test).mean()
+                accuracies.append(fold_accuracy)
                 
-                logger.info(f"Fold {fold} accuracy: {accuracy:.2%}")
-                mlflow.log_metric(f'fold_{fold}_accuracy', accuracy)
-                
-                # Only use first fold for demo
-                break
+                logger.info(f"Fold {fold} accuracy: {fold_accuracy:.2%}")
+                mlflow.log_metric(f'fold_{fold}_accuracy', fold_accuracy)
+            
+            # Calculate mean accuracy across all folds
+            if accuracies:
+                accuracy = np.mean(accuracies)
+                logger.info(f"Mean accuracy across {len(accuracies)} folds: {accuracy:.2%}")
+                mlflow.log_metric('mean_cv_accuracy', accuracy)
         else:
             logger.warning("No data available for training, skipping model training")
         

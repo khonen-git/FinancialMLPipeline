@@ -1,0 +1,89 @@
+# @package _global_
+# Walk-forward validation sur EURUSD 2023 avec 3 folds
+
+experiment:
+  name: "eurusd_2023_walkforward_3folds"
+  description: "Walk-forward validation with 3 folds on 2023 data"
+  tags: ["eurusd", "2023", "walkforward", "cv"]
+
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.0001
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
+session:
+  session_start: "00:00"
+  session_end: "21:55"
+  friday_end: "20:00"
+  weekend_trading: false
+
+data:
+  dukascopy:
+    raw_dir: "data/raw"
+    filename: "EURUSD_2023.csv"
+    format: "csv"
+  bars:
+    type: "tick"
+    threshold: 1000
+
+labeling:
+  triple_barrier:
+    tp_ticks: 100
+    sl_ticks: 100
+    max_horizon_bars: 50
+    min_horizon_bars: 10
+    distance_mode: "ticks"
+
+features:
+  returns_lookbacks: [1, 5, 10, 20]
+  volatility_lookbacks: [10, 20, 50]
+  range_lookbacks: [10, 20]
+  spread_stats_lookbacks: [5, 10]
+  order_flow_lookbacks: [5, 10, 20]
+
+models:
+  hmm:
+    macro:
+      enabled: false  # Désactivé pour rapidité
+      n_states: 3
+    micro:
+      enabled: false
+      n_states: 3
+  random_forest:
+    params:
+      n_estimators: 200
+      max_depth: 10
+      min_samples_leaf: 10  # Augmenté pour réduire overfitting
+      n_jobs: -1
+      class_weight: "balanced"
+    calibration:
+      enabled: false
+
+validation:
+  n_splits: 3  # 3 folds pour walk-forward
+  train_duration: 6000
+  test_duration: 2000
+  purge_window: 50
+  embargo_duration: 20
+
+risk:
+  mc_simulations: 1000
+  starting_capital: 10000.0
+  max_daily_loss: 0.03
+  max_total_drawdown: 0.2
+
+reporting:
+  enabled: true
+  output_dir: "outputs/reports"
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "eurusd_2023_walkforward_3folds"
+
+runtime:
+  log_level: "INFO"
+  gpu_enabled: false
+
