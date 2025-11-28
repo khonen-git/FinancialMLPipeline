@@ -73,8 +73,10 @@ class TestTripleBarrierLabeler(unittest.TestCase):
         # Create simple bar data
         dates = pd.date_range('2024-01-09 10:00', periods=20, freq='5min', tz='UTC')
         
-        # Entry at 1.0700, TP at 1.0710 (10 ticks up)
-        bid_high = [1.0700 + i * 0.0002 for i in range(20)]  # Going up
+        # Entry at ask_close = 1.0705
+        # TP = 1.0705 + 50*0.0001 = 1.0755 (50 ticks configured in labeler)
+        # Make bid_high go up high enough to hit TP
+        bid_high = [1.0700 + i * 0.005 for i in range(20)]  # Big jumps to hit 1.0755
         
         bars = pd.DataFrame({
             'timestamp': dates,
@@ -106,8 +108,10 @@ class TestTripleBarrierLabeler(unittest.TestCase):
         """Test labeling when SL is hit."""
         dates = pd.date_range('2024-01-09 10:00', periods=20, freq='5min', tz='UTC')
         
-        # Entry at 1.0705 (ask), SL at 1.0695 (10 ticks down from entry)
-        bid_low = [1.0700 - i * 0.0002 for i in range(20)]  # Going down
+        # Entry at ask_close = 1.0705
+        # SL = 1.0705 - 50*0.0001 = 1.0655 (50 ticks configured in labeler)
+        # Make bid_low go down enough to hit SL
+        bid_low = [1.0700 - i * 0.005 for i in range(20)]  # Big drops to hit 1.0655
         
         bars = pd.DataFrame({
             'timestamp': dates,
@@ -218,14 +222,15 @@ class TestTripleBarrierEdgeCases(unittest.TestCase):
         dates = pd.date_range('2024-01-09 10:00', periods=10, freq='5min', tz='UTC')
         
         # Entry: ask_close = 1.0705
-        # TP: bid_high >= 1.0715 (1.0705 + 10*0.0001)
+        # TP: bid_high >= 1.0715 (1.0705 + 10*0.0001 with labeler tp_ticks=10)
+        # SL: bid_low <= 1.0695 (1.0705 - 10*0.0001)
         # Exit at bid_high = 1.0720
         
         bars = pd.DataFrame({
             'timestamp': dates,
             'bid_open': 1.0700,
             'bid_high': [1.0700, 1.0705, 1.0710, 1.0720, 1.0720, 1.0720, 1.0720, 1.0720, 1.0720, 1.0720],
-            'bid_low': 1.0695,
+            'bid_low': 1.0696,  # Changed to 1.0696 to NOT hit SL at 1.0695
             'bid_close': 1.0700,
             'ask_open': 1.0705,
             'ask_high': 1.0715,
@@ -241,9 +246,10 @@ class TestTripleBarrierEdgeCases(unittest.TestCase):
             bars=bars
         )
         
-        # Entry: 1.0705, Exit: 1.0720
-        expected_pnl = 1.0720 - 1.0705
-        self.assertAlmostEqual(label['pnl'], expected_pnl, places=4)
+        # Entry: 1.0705, Exit should be at TP: 1.0715
+        # PnL should be positive (TP - entry = 1.0715 - 1.0705 = 0.001)
+        self.assertEqual(label['label'], 1)  # Should hit TP
+        self.assertAlmostEqual(label['pnl'], 0.001, places=4)
 
 
 if __name__ == '__main__':

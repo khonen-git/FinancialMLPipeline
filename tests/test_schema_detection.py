@@ -126,11 +126,18 @@ class TestSchemaDetectorEdgeCases(unittest.TestCase):
         }
         detector = SchemaDetector(config)
         
-        df = pd.DataFrame(columns=['timestamp', 'askPrice', 'bidPrice', 'askVolume', 'bidVolume'])
+        # Empty DataFrame - need to specify dtypes for validation to work
+        df = pd.DataFrame({
+            'timestamp': pd.Series([], dtype='int64'),
+            'askPrice': pd.Series([], dtype='float64'),
+            'bidPrice': pd.Series([], dtype='float64'),
+            'askVolume': pd.Series([], dtype='float64'),
+            'bidVolume': pd.Series([], dtype='float64')
+        })
         
         is_valid, errors = detector.validate_schema_simple(df)
         
-        # Empty is technically valid schema (has all columns)
+        # Empty DataFrame with correct types should be valid
         self.assertTrue(is_valid)
     
     def test_extra_columns(self):

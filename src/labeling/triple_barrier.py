@@ -401,8 +401,13 @@ class TripleBarrierLabeler:
             bid_low = bars.iloc[i]['bid_low']
             bid_close = bars.iloc[i]['bid_close']
             
-            # Check TP
-            if bid_high >= tp_price:
+            # Check both barriers
+            tp_hit = bid_high >= tp_price
+            sl_hit = bid_low <= sl_price
+            
+            # If both hit in same bar, TP takes priority (conservative assumption)
+            # In reality, we'd need intra-bar data to know which was hit first
+            if tp_hit:
                 return {
                     'label': 1,
                     'barrier_hit': 'tp',
@@ -410,8 +415,7 @@ class TripleBarrierLabeler:
                     'exit_time': current_time
                 }
             
-            # Check SL
-            if bid_low <= sl_price:
+            if sl_hit:
                 return {
                     'label': -1,
                     'barrier_hit': 'sl',

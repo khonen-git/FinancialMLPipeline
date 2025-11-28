@@ -152,7 +152,7 @@ class TestBarBuilderEdgeCases(unittest.TestCase):
     
     def test_volume_bars_no_volume_data(self):
         """Test volume bars fallback when no volume data."""
-        config = {'type': 'volume', 'threshold': 5000}
+        config = {'type': 'volume', 'threshold': 500}  # Lower threshold for test data
         builder = BarBuilder(config)
         
         # Ticks without volume
@@ -164,9 +164,9 @@ class TestBarBuilderEdgeCases(unittest.TestCase):
         })
         ticks = ticks.set_index('timestamp')
         
-        # Should fallback to tick bars
+        # Should fallback to tick bars and create at least 1 bar (1000 ticks / 500 threshold = 2 bars)
         bars = builder.build_bars(ticks)
-        self.assertGreater(len(bars), 0)
+        self.assertGreaterEqual(len(bars), 1)
 
 
 if __name__ == '__main__':
