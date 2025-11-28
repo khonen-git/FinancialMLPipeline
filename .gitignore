@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.history/
+.DS_Store
+
+# Project data (large)
+data/
+*.parquet
+*.feather
+*.csv
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Hydra
+outputs/
+multirun/
+*.yaml hydra.yaml
+
+# Logs
+logs/
+*.log
+
+# Notebook outputs
+*.ipynb_checkpoints
+
+# Reports
+reports/
+*.pdf
+*.html
+
+# Backtest outputs
+backtests/
+*.png
+*.csv
+
+# Cache / temp
+.cache/
+.tmp/
+tmp/
