@@ -1,0 +1,25 @@
+# Dukascopy data source configuration
+
+data:
+  source: "dukascopy"
+  format: "auto"  # auto | csv | parquet
+  raw_path: "data/raw/eurusd/"
+  clean_path: "data/clean/eurusd/"
+  processed_path: "data/processed/eurusd/"
+  timezone: "UTC"
+  
+  date_range:
+    start: "2019-01-01"
+    end: "2020-12-31"
+  
+  schema:
+    timestamp: "timestamp"  # epoch ms
+    ask: "askPrice"
+    bid: "bidPrice"
+    ask_volume: "askVolume"
+    bid_volume: "bidVolume"
+  
+  volume_policy:
+    require_volume: false  # if true, raise error if volume is missing
+    allow_synthetic: true  # some FX volumes are synthetic
+

@@ -1,0 +1,24 @@
+# Bar construction configuration
+
+bars:
+  main_type: "tick1000"
+  available:
+    - "tick100"
+    - "tick1000"
+    - "volume_bar"
+  
+  tick:
+    sizes:
+      - 100
+      - 1000
+  
+  volume:
+    enabled: true
+    target_volume: 1000000.0  # units of volume per bar
+  
+  dollar:
+    enabled: false  # future extension
+  
+  heikin_ashi:
+    enabled: false  # applied as transform on top of OHLC
+
