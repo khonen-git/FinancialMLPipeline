@@ -1,0 +1,62 @@
+# @package _global_
+# Full experiment: Train on 2023, test on 2024
+
+defaults:
+  - override /assets: EURUSD
+  - override /data/bars: base_bars
+  - override /session: base_session
+  - override /labeling: triple_barrier
+  - override /features: base_features
+  - override /models/hmm: base_hmm
+  - override /models: rf_cpu
+  - override /validation: tscv
+  - override /backtest: base_bt
+  - override /risk: base_risk
+  - override /reporting: base_report
+  - override /mlflow: local
+  - override /runtime: production
+
+experiment:
+  name: "eurusd_2023_train_2024_test"
+  description: "Train on full 2023 data, backtest on 2024"
+  tags: ["eurusd", "2023", "2024", "production"]
+
+data:
+  dukascopy:
+    raw_dir: "data/raw"
+    filename: "EURUSD_2023.parquet"  # Full 2023 for training
+
+labeling:
+  triple_barrier:
+    tp_ticks: 100
+    sl_ticks: 100
+    max_horizon_bars: 50
+    min_horizon_bars: 10
+    distance_mode: "ticks"
+
+models:
+  random_forest:
+    params:
+      n_estimators: 200  # More trees for production
+      max_depth: 10
+      min_samples_leaf: 5
+      n_jobs: -1
+      class_weight: "balanced"
+    calibration:
+      enabled: true
+      method: "isotonic"
+
+validation:
+  n_splits: 5
+  train_duration: 5000  # ~5000 bars for training
+  test_duration: 1000  # ~1000 bars for testing
+  purge_window: 50
+  embargo_duration: 20
+
+risk:
+  mc_simulations: 10000  # More simulations for accurate estimates
+
+runtime:
+  log_level: "INFO"
+  gpu_enabled: false
+
