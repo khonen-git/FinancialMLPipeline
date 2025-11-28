@@ -16,6 +16,7 @@ import logging
 import hydra
 from omegaconf import DictConfig
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import mlflow
 
