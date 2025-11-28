@@ -6,6 +6,13 @@ experiment:
   description: "Quick end-to-end test with EURUSD sample (50k ticks)"
   tags: ["test", "sample", "eurusd", "quick"]
 
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.0001
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
 data:
   dukascopy:
     raw_dir: "data/raw"
