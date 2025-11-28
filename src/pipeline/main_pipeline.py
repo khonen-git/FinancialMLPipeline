@@ -167,11 +167,21 @@ def run_pipeline(cfg: DictConfig):
         
         dataset = all_features.join(labels_indexed, how='inner')
         logger.info(f"After join: {len(dataset)} samples")
-        dataset = dataset.dropna()
-        logger.info(f"After dropna: {len(dataset)} samples")
+        
+        # Check for NaN in specific columns before dropna
+        if len(dataset) > 0:
+            nan_counts = dataset.isna().sum()
+            if nan_counts.max() > 0:
+                logger.warning(f"Columns with NaN: {nan_counts[nan_counts > 0].to_dict()}")
+        
+        # Only drop rows where label or critical features are NaN
+        # Don't drop based on optional label metadata columns
+        critical_cols = list(all_features.columns) + ['label']
+        dataset = dataset.dropna(subset=critical_cols)
+        logger.info(f"After dropna (critical cols only): {len(dataset)} samples")
         
         if len(dataset) > 0:
-            X = dataset.drop(columns=['label', 'pnl', 'barrier_hit', 'event_start', 'event_end'], errors='ignore')
+            X = dataset.drop(columns=['label', 'pnl', 'barrier_hit', 'event_start', 'event_end', 'bar_index_start', 'bar_index_end'], errors='ignore')
             y = dataset['label']
             logger.info(f"Merge successful! {len(dataset)} samples aligned")
         else:
