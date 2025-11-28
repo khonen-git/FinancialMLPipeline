@@ -72,7 +72,22 @@ def run_pipeline(cfg: DictConfig):
         # Use filename from config if specified, otherwise construct from symbol
         filename = cfg.data.dukascopy.get('filename', f"{cfg.assets.symbol}.parquet")
         data_path = Path(cfg.data.dukascopy.raw_dir) / filename
-        ticks = pd.read_parquet(data_path)
+        
+        # Support both CSV and Parquet formats
+        file_format = cfg.data.dukascopy.get('format', 'auto')
+        if file_format == 'auto':
+            file_format = 'csv' if str(data_path).endswith('.csv') else 'parquet'
+        
+        if file_format == 'csv':
+            logger.info(f"Loading CSV: {data_path}")
+            ticks = pd.read_csv(data_path)
+            # Ensure timestamp column is datetime
+            if 'timestamp' in ticks.columns:
+                ticks['timestamp'] = pd.to_datetime(ticks['timestamp'], unit='ms', utc=True)
+            ticks = ticks.set_index('timestamp')
+        else:
+            ticks = pd.read_parquet(data_path)
+        
         logger.info(f"Loaded {len(ticks)} ticks from {data_path}")
         
         # Step 2: Schema detection and cleaning
