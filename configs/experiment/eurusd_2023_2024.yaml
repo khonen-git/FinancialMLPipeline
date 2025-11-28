@@ -1,20 +1,8 @@
 # @package _global_
 # Full experiment: Train on 2023, test on 2024
 
-defaults:
-  - override /assets: EURUSD
-  - override /data/bars: base_bars
-  - override /session: base_session
-  - override /labeling: triple_barrier
-  - override /features: base_features
-  - override /models/hmm: base_hmm
-  - override /models: rf_cpu
-  - override /validation: tscv
-  - override /backtest: base_bt
-  - override /risk: base_risk
-  - override /reporting: base_report
-  - override /mlflow: local
-  - override /runtime: production
+# @package _global_
+# Full experiment: Train on 2023, test on 2024
 
 experiment:
   name: "eurusd_2023_train_2024_test"
