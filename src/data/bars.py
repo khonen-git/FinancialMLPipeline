@@ -167,8 +167,14 @@ class BarBuilder:
         Returns:
             Dictionary with bar data
         """
+        # Get timestamp - should be datetime already from index
+        timestamp = chunk.index[0]
+        if not isinstance(timestamp, pd.Timestamp):
+            # Convert if needed
+            timestamp = pd.Timestamp(timestamp)
+        
         bar = {
-            'timestamp': chunk.index[0] if hasattr(chunk.index[0], 'timestamp') else chunk.iloc[0].name,
+            'timestamp': timestamp,
             'bid_open': chunk['bidPrice'].iloc[0],
             'bid_high': chunk['bidPrice'].max(),
             'bid_low': chunk['bidPrice'].min(),
