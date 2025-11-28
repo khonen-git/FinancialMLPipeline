@@ -322,6 +322,14 @@ class TripleBarrierLabeler:
         Returns:
             DataFrame with labels
         """
+        # Ensure event_indices is DatetimeIndex
+        if not isinstance(event_indices, pd.DatetimeIndex):
+            if hasattr(bars, 'index') and isinstance(bars.index, pd.DatetimeIndex):
+                # Use bars index which should be datetime
+                event_indices = bars.index[event_indices] if len(event_indices) <= len(bars) else bars.index
+            else:
+                raise ValueError("Cannot convert event_indices to DatetimeIndex. Bars must have DatetimeIndex.")
+        
         # Create events DataFrame
         events = pd.DataFrame({
             'timestamp': event_indices,
