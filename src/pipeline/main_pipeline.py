@@ -22,7 +22,7 @@ import mlflow
 from src.utils.logging_config import setup_logging
 from src.data.schema_detection import SchemaDetector
 from src.labeling.session_calendar import SessionCalendar
-from src.labeling.triple_barrier import TripleBarrier Labeler
+from src.labeling.triple_barrier import TripleBarrierLabeler
 from src.features.price import create_price_features
 from src.features.microstructure import create_microstructure_features
 from src.features.bars_stats import create_bar_stats_features
