@@ -207,12 +207,13 @@ def run_pipeline(cfg: DictConfig):
         )
         
         # Step 10: Train model with walk-forward validation
-        logger.info("Step 10: Training Random Forest")
+        logger.info("Step 10: Training Random Forest with purged cross-validation")
         accuracy = 0.0  # Initialize
         accuracies = []
         
         if len(X) > 0:
-            for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
+            # Pass label_indices to enable advanced purging
+            for fold, (train_idx, test_idx) in enumerate(tscv.split(X, label_indices)):
                 logger.info(f"Fold {fold}: train={len(train_idx)}, test={len(test_idx)}")
                 
                 X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
