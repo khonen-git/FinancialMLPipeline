@@ -53,7 +53,8 @@ def run_pipeline(cfg: DictConfig):
     logger.info("=" * 80)
     
     # Setup MLflow
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
+    tracking_uri = cfg.get('mlflow', {}).get('tracking_uri', './mlruns')
+    mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(cfg.experiment.name)
     
     with mlflow.start_run():

@@ -1,18 +1,6 @@
 # @package _global_
 # Quick test experiment with sample data
 
-defaults:
-  - override /assets: EURUSD
-  - override /session: default_fx
-  - override /labeling: triple_barrier
-  - override /features: base_features
-  - override /models: rf_cpu
-  - override /risk: basic
-  - override /backtest: base_bt
-  - override /reporting: report
-  - override /mlflow: local
-  - override /runtime: hardware
-
 experiment:
   name: "test_sample_eurusd"
   description: "Quick end-to-end test with EURUSD sample (50k ticks)"
