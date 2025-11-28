@@ -46,12 +46,12 @@ features:
 models:
   hmm:
     macro:
-      enabled: true
+      enabled: false  # Disabled for quick test (needs more bars)
       n_states: 3
       features: ["ret_long", "vol_long", "trend_slope", "trend_strength"]
     
     micro:
-      enabled: true
+      enabled: false  # Disabled for quick test (needs more bars)
       n_states: 3
       features: ["of_imbalance", "spread", "spread_change", "tick_direction"]
   
