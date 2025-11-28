@@ -21,6 +21,13 @@ experiment:
   description: "Train on full 2023 data, backtest on 2024"
   tags: ["eurusd", "2023", "2024", "production"]
 
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.0001
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
 data:
   dukascopy:
     raw_dir: "data/raw"
@@ -29,13 +36,6 @@ data:
   bars:
     type: "tick"
     threshold: 1000  # 1000 ticks per bar
-
-assets:
-  symbol: "EURUSD"
-  tick_size: 0.0001
-  pip_value: 0.0001
-  min_lot: 0.01
-  max_lot: 100.0
 
 labeling:
   triple_barrier:
