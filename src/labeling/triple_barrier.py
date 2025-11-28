@@ -323,7 +323,7 @@ class TripleBarrierLabeler:
             avg_bar_duration_sec: Average bar duration (optional)
             
         Returns:
-            DataFrame with labels
+            DataFrame with labels (index aligned with bars)
         """
         # Ensure event_indices is DatetimeIndex
         if not isinstance(event_indices, pd.DatetimeIndex):
@@ -333,10 +333,13 @@ class TripleBarrierLabeler:
             else:
                 raise ValueError("Cannot convert event_indices to DatetimeIndex. Bars must have DatetimeIndex.")
         
-        # Create events DataFrame
+        # Create events DataFrame with bar indices for later alignment
+        bar_positions = [bars.index.get_loc(ts) for ts in event_indices if ts in bars.index]
+        valid_timestamps = [ts for ts in event_indices if ts in bars.index]
+        
         events = pd.DataFrame({
-            'timestamp': event_indices,
-            'bar_index': range(len(event_indices))
+            'timestamp': valid_timestamps,
+            'bar_index': bar_positions
         })
         
         # Use compute_triple_barrier function
@@ -350,6 +353,13 @@ class TripleBarrierLabeler:
             min_horizon_bars=self.min_horizon_bars,
             avg_bar_duration_sec=avg_bar_duration_sec
         )
+        
+        # Add bar_timestamp for alignment with features
+        if len(labels) > 0 and 'event_start' in labels.columns:
+            # Map event_start to the corresponding bar timestamp for accurate merge
+            labels['bar_timestamp'] = labels['event_start'].apply(
+                lambda ts: bars.index[bars.index.get_indexer([ts], method='nearest')[0]]
+            )
         
         return labels
     

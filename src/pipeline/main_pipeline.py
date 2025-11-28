@@ -149,14 +149,23 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 8: Merge features and labels
         logger.info("Step 8: Merging features and labels")
-        # Align indexes: labels use event_start, features use bar timestamp
-        labels_indexed = labels_df.set_index('event_start') if 'event_start' in labels_df.columns else labels_df
+        # Use bar_timestamp for accurate alignment with features
+        if 'bar_timestamp' in labels_df.columns:
+            labels_indexed = labels_df.set_index('bar_timestamp')
+            logger.info(f"Using bar_timestamp for merge. Features: {len(all_features)}, Labels: {len(labels_indexed)}")
+        elif 'event_start' in labels_df.columns:
+            labels_indexed = labels_df.set_index('event_start')
+            logger.warning("Using event_start for merge (may cause alignment issues)")
+        else:
+            labels_indexed = labels_df
+        
         dataset = all_features.join(labels_indexed, how='inner')
         dataset = dataset.dropna()
         
         if len(dataset) > 0:
-            X = dataset.drop(columns=['label', 'pnl', 'barrier_hit'], errors='ignore')
+            X = dataset.drop(columns=['label', 'pnl', 'barrier_hit', 'event_start', 'event_end'], errors='ignore')
             y = dataset['label']
+            logger.info(f"Merge successful! {len(dataset)} samples aligned")
         else:
             logger.warning(f"Empty merge! Features index sample: {all_features.index[:3].tolist()}, Labels index sample: {labels_indexed.index[:3].tolist() if len(labels_indexed) > 0 else 'empty'}")
             X = all_features.iloc[:0]  # Empty DataFrame with columns
