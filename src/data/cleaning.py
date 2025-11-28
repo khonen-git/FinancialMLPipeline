@@ -1,195 +1,110 @@
-"""Data cleaning and normalization module.
+"""Data cleaning and preprocessing.
 
-According to DATA_HANDLING.md:
-- Convert timestamps to UTC
-- Sort chronologically
-- Drop corrupted rows
-- Ensure askPrice > bidPrice
-- Compute derived fields (midPrice, spread)
+Cleans Dukascopy tick data:
+- Remove outliers
+- Handle duplicates
+- Fill gaps
+- Normalize timestamps
 """
 
 import logging
-from typing import Tuple
-
 import pandas as pd
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
-class DataCleaner:
-    """Clean and normalize raw tick data."""
-    
-    def __init__(self, config: dict):
-        """Initialize data cleaner.
-        
-        Args:
-            config: Data configuration
-        """
-        self.config = config
-        self.timezone = config.get('timezone', 'UTC')
-    
-    def clean(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
-        """Clean raw tick data.
-        
-        Args:
-            df: Raw DataFrame with tick data
-            
-        Returns:
-            Tuple of (cleaned DataFrame, cleaning stats dict)
-        """
-        logger.info(f"Starting cleaning. Input rows: {len(df)}")
-        
-        initial_rows = len(df)
-        stats = {'initial_rows': initial_rows}
-        
-        # Convert timestamp from epoch ms to UTC datetime
-        df = self._convert_timestamps(df)
-        
-        # Sort by timestamp
-        df = df.sort_values('timestamp').reset_index(drop=True)
-        logger.debug("Sorted by timestamp")
-        
-        # Drop corrupted rows
-        df, corruption_stats = self._drop_corrupted_rows(df)
-        stats.update(corruption_stats)
-        
-        # Enforce strictly increasing timestamps
-        df = self._enforce_strictly_increasing_timestamps(df)
-        stats['after_timestamp_dedup'] = len(df)
-        
-        # Compute derived fields
-        df = self._compute_derived_fields(df)
-        
-        stats['final_rows'] = len(df)
-        stats['rows_dropped'] = initial_rows - stats['final_rows']
-        stats['drop_rate'] = stats['rows_dropped'] / initial_rows if initial_rows > 0 else 0
-        
-        logger.info(
-            f"Cleaning complete. Final rows: {stats['final_rows']} "
-            f"({stats['drop_rate']*100:.2f}% dropped)"
-        )
-        
-        return df, stats
-    
-    def _convert_timestamps(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Convert epoch milliseconds to UTC datetime.
-        
-        Args:
-            df: DataFrame with 'timestamp' column
-            
-        Returns:
-            DataFrame with converted timestamps
-        """
-        df = df.copy()
-        
-        if df['timestamp'].dtype == 'int64':
-            # Assume epoch milliseconds
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
-        elif not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
-            # Try to convert
-            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
-        
-        # Ensure UTC
-        if df['timestamp'].dt.tz is None:
-            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
-        else:
-            df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
-        
-        return df
-    
-    def _drop_corrupted_rows(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
-        """Drop corrupted rows (NaN, inf, askPrice <= bidPrice).
-        
-        Args:
-            df: DataFrame
-            
-        Returns:
-            Tuple of (cleaned DataFrame, stats dict)
-        """
-        df = df.copy()
-        stats = {}
-        
-        initial_rows = len(df)
-        
-        # Drop NaN in required columns
-        required_cols = ['timestamp', 'askPrice', 'bidPrice']
-        df = df.dropna(subset=required_cols)
-        stats['nan_dropped'] = initial_rows - len(df)
-        
-        # Drop infinite values
-        df = df[~np.isinf(df['askPrice'])]
-        df = df[~np.isinf(df['bidPrice'])]
-        stats['inf_dropped'] = initial_rows - stats['nan_dropped'] - len(df)
-        
-        # Ensure askPrice > bidPrice
-        df = df[df['askPrice'] > df['bidPrice']]
-        stats['invalid_spread_dropped'] = (
-            initial_rows - stats['nan_dropped'] - stats['inf_dropped'] - len(df)
-        )
-        
-        # Drop negative volumes if present
-        if 'askVolume' in df.columns:
-            df = df[df['askVolume'] >= 0]
-        if 'bidVolume' in df.columns:
-            df = df[df['bidVolume'] >= 0]
-        stats['negative_volume_dropped'] = (
-            initial_rows - stats['nan_dropped'] - stats['inf_dropped'] 
-            - stats['invalid_spread_dropped'] - len(df)
-        )
-        
-        return df, stats
-    
-    def _enforce_strictly_increasing_timestamps(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Remove duplicate timestamps, keep first occurrence.
-        
-        Args:
-            df: DataFrame sorted by timestamp
-            
-        Returns:
-            DataFrame with unique timestamps
-        """
-        df = df.copy()
-        
-        # Drop duplicate timestamps (keep first)
-        duplicates_before = len(df)
-        df = df.drop_duplicates(subset=['timestamp'], keep='first')
-        duplicates_dropped = duplicates_before - len(df)
-        
-        if duplicates_dropped > 0:
-            logger.debug(f"Dropped {duplicates_dropped} duplicate timestamps")
-        
-        return df
-    
-    def _compute_derived_fields(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Compute midPrice and spread.
-        
-        Args:
-            df: DataFrame with askPrice and bidPrice
-            
-        Returns:
-            DataFrame with derived fields
-        """
-        df = df.copy()
-        
-        df['midPrice'] = (df['askPrice'] + df['bidPrice']) / 2.0
-        df['spread'] = df['askPrice'] - df['bidPrice']
-        
-        return df
-
-
-def save_cleaned_data(df: pd.DataFrame, output_path: str) -> None:
-    """Save cleaned data as Parquet.
+def clean_ticks(
+    ticks: pd.DataFrame,
+    config: dict
+) -> pd.DataFrame:
+    """Clean tick data.
     
     Args:
-        df: Cleaned DataFrame
-        output_path: Output file path
+        ticks: Raw tick DataFrame
+        config: Cleaning configuration
+        
+    Returns:
+        Cleaned DataFrame
     """
-    from pathlib import Path
+    logger.info(f"Cleaning {len(ticks)} ticks")
     
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    initial_count = len(ticks)
     
-    df.to_parquet(output_path, engine='pyarrow', compression='snappy', index=False)
-    logger.info(f"Cleaned data saved to {output_path}")
+    # Remove duplicates
+    if config.get('remove_duplicates', True):
+        ticks = ticks.drop_duplicates(subset=['timestamp'], keep='first')
+        logger.info(f"Removed {initial_count - len(ticks)} duplicate timestamps")
+    
+    # Remove zero spreads
+    if config.get('remove_zero_spread', True):
+        spread = ticks['askPrice'] - ticks['bidPrice']
+        zero_spread_mask = spread <= 0
+        ticks = ticks[~zero_spread_mask]
+        logger.info(f"Removed {zero_spread_mask.sum()} zero spread ticks")
+    
+    # Remove outliers (price spikes)
+    if config.get('remove_outliers', True):
+        ticks = remove_price_outliers(ticks, config)
+    
+    # Sort by timestamp
+    ticks = ticks.sort_values('timestamp').reset_index(drop=True)
+    
+    logger.info(f"Cleaning complete: {len(ticks)} ticks remaining")
+    
+    return ticks
 
+
+def remove_price_outliers(
+    ticks: pd.DataFrame,
+    config: dict,
+    price_col: str = 'bidPrice'
+) -> pd.DataFrame:
+    """Remove price outliers using rolling z-score.
+    
+    Args:
+        ticks: Tick DataFrame
+        config: Configuration
+        price_col: Price column to check
+        
+    Returns:
+        DataFrame without outliers
+    """
+    window = config.get('outlier_window', 100)
+    threshold = config.get('outlier_threshold', 5.0)
+    
+    # Compute rolling mean and std
+    rolling_mean = ticks[price_col].rolling(window=window, min_periods=1).mean()
+    rolling_std = ticks[price_col].rolling(window=window, min_periods=1).std()
+    
+    # Z-score
+    z_score = np.abs((ticks[price_col] - rolling_mean) / (rolling_std + 1e-10))
+    
+    # Filter
+    outlier_mask = z_score > threshold
+    n_outliers = outlier_mask.sum()
+    
+    if n_outliers > 0:
+        logger.info(f"Removed {n_outliers} price outliers (z-score > {threshold})")
+    
+    return ticks[~outlier_mask]
+
+
+def normalize_timestamps(
+    ticks: pd.DataFrame
+) -> pd.DataFrame:
+    """Normalize timestamps to datetime.
+    
+    Args:
+        ticks: Tick DataFrame
+        
+    Returns:
+        DataFrame with normalized timestamps
+    """
+    if not pd.api.types.is_datetime64_any_dtype(ticks['timestamp']):
+        ticks['timestamp'] = pd.to_datetime(ticks['timestamp'], unit='ms')
+    
+    # Set as index
+    ticks = ticks.set_index('timestamp')
+    
+    return ticks
