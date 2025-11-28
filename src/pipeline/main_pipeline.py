@@ -168,17 +168,21 @@ def run_pipeline(cfg: DictConfig):
         dataset = all_features.join(labels_indexed, how='inner')
         logger.info(f"After join: {len(dataset)} samples")
         
-        # Check for NaN in specific columns before dropna
+        # Check for NaN and drop columns that are entirely NaN
         if len(dataset) > 0:
             nan_counts = dataset.isna().sum()
-            if nan_counts.max() > 0:
-                logger.warning(f"Columns with NaN: {nan_counts[nan_counts > 0].to_dict()}")
+            all_nan_cols = nan_counts[nan_counts == len(dataset)].index.tolist()
+            if all_nan_cols:
+                logger.warning(f"Dropping {len(all_nan_cols)} columns with all NaN: {all_nan_cols}")
+                dataset = dataset.drop(columns=all_nan_cols)
+            
+            remaining_nan = dataset.isna().sum()
+            if remaining_nan.max() > 0:
+                logger.info(f"Columns with some NaN (will be dropped): {remaining_nan[remaining_nan > 0].to_dict()}")
         
-        # Only drop rows where label or critical features are NaN
-        # Don't drop based on optional label metadata columns
-        critical_cols = list(all_features.columns) + ['label']
-        dataset = dataset.dropna(subset=critical_cols)
-        logger.info(f"After dropna (critical cols only): {len(dataset)} samples")
+        # Drop rows with any NaN in features or label
+        dataset = dataset.dropna()
+        logger.info(f"After dropna: {len(dataset)} samples")
         
         if len(dataset) > 0:
             X = dataset.drop(columns=['label', 'pnl', 'barrier_hit', 'event_start', 'event_end', 'bar_index_start', 'bar_index_end'], errors='ignore')
