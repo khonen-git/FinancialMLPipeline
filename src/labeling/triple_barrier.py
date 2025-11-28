@@ -268,3 +268,166 @@ def compute_labels_from_config(
     
     return labels
 
+
+class TripleBarrierLabeler:
+    """Class wrapper for triple barrier labeling functionality.
+    
+    Provides an object-oriented interface to the triple barrier functions.
+    """
+    
+    def __init__(self, config: dict, session_calendar: SessionCalendar):
+        """Initialize labeler with configuration.
+        
+        Args:
+            config: Configuration dictionary with keys:
+                - tp_ticks: Take profit in ticks
+                - sl_ticks: Stop loss in ticks
+                - max_horizon_bars: Maximum holding period
+                - min_horizon_bars: Minimum horizon (no-trade threshold)
+                - distance_mode: 'ticks' or 'absolute'
+                - tick_size: Tick size for 'ticks' mode (default 0.0001)
+            session_calendar: SessionCalendar instance
+        """
+        self.config = config
+        self.calendar = session_calendar
+        
+        self.tp_ticks = config.get('tp_ticks', 100)
+        self.sl_ticks = config.get('sl_ticks', 100)
+        self.max_horizon_bars = config.get('max_horizon_bars', 50)
+        self.min_horizon_bars = config.get('min_horizon_bars', 10)
+        self.distance_mode = config.get('distance_mode', 'ticks')
+        self.tick_size = config.get('tick_size', 0.0001)
+        
+        # Compute distances
+        if self.distance_mode == 'ticks':
+            self.tp_distance = self.tp_ticks * self.tick_size
+            self.sl_distance = self.sl_ticks * self.tick_size
+        else:
+            self.tp_distance = self.tp_ticks  # Assume absolute
+            self.sl_distance = self.sl_ticks
+    
+    def label_dataset(
+        self,
+        bars: pd.DataFrame,
+        event_indices: pd.Index,
+        avg_bar_duration_sec: Optional[float] = None
+    ) -> pd.DataFrame:
+        """Label a dataset using triple barrier method.
+        
+        Args:
+            bars: DataFrame with OHLC bars
+            event_indices: Indices to label (from features DataFrame)
+            avg_bar_duration_sec: Average bar duration (optional)
+            
+        Returns:
+            DataFrame with labels
+        """
+        # Create events DataFrame
+        events = pd.DataFrame({
+            'timestamp': event_indices,
+            'bar_index': range(len(event_indices))
+        })
+        
+        # Use compute_triple_barrier function
+        labels = compute_triple_barrier(
+            events=events,
+            prices=bars,
+            tp_distance=self.tp_distance,
+            sl_distance=self.sl_distance,
+            max_horizon_bars=self.max_horizon_bars,
+            session_calendar=self.calendar,
+            min_horizon_bars=self.min_horizon_bars,
+            avg_bar_duration_sec=avg_bar_duration_sec
+        )
+        
+        return labels
+    
+    def _compute_effective_horizon_bars(
+        self,
+        dt: pd.Timestamp,
+        bar_duration_minutes: int = 5
+    ) -> int:
+        """Compute effective horizon considering session end.
+        
+        Args:
+            dt: Event start time
+            bar_duration_minutes: Bar duration in minutes
+            
+        Returns:
+            Effective horizon in bars
+        """
+        # Time until session end in minutes
+        time_until_session = self.calendar.time_until_session_end(dt, unit='minutes')
+        
+        # Convert to bars
+        bars_until_session = int(time_until_session / bar_duration_minutes)
+        
+        # Effective horizon is minimum
+        return min(self.max_horizon_bars, bars_until_session)
+    
+    def _label_single_event(
+        self,
+        event_time: pd.Timestamp,
+        event_idx: int,
+        bars: pd.DataFrame
+    ) -> Optional[dict]:
+        """Label a single event (for testing).
+        
+        Args:
+            event_time: Event start time
+            event_idx: Event index in bars
+            bars: Bars DataFrame
+            
+        Returns:
+            Dictionary with label info or None if skipped
+        """
+        # Check if too close to session end
+        effective_horizon = self._compute_effective_horizon_bars(event_time)
+        
+        if effective_horizon < self.min_horizon_bars:
+            return None  # Skip event
+        
+        # Entry price (ask)
+        entry_price = bars.loc[event_time, 'ask_close']
+        
+        # TP/SL barriers
+        tp_price = entry_price + self.tp_distance
+        sl_price = entry_price - self.sl_distance
+        
+        # Scan forward
+        for i in range(event_idx + 1, min(event_idx + 1 + effective_horizon, len(bars))):
+            current_time = bars.index[i]
+            bid_high = bars.iloc[i]['bid_high']
+            bid_low = bars.iloc[i]['bid_low']
+            bid_close = bars.iloc[i]['bid_close']
+            
+            # Check TP
+            if bid_high >= tp_price:
+                return {
+                    'label': 1,
+                    'barrier_hit': 'tp',
+                    'pnl': tp_price - entry_price,
+                    'exit_time': current_time
+                }
+            
+            # Check SL
+            if bid_low <= sl_price:
+                return {
+                    'label': -1,
+                    'barrier_hit': 'sl',
+                    'pnl': sl_price - entry_price,
+                    'exit_time': current_time
+                }
+        
+        # Time barrier hit
+        exit_idx = min(event_idx + effective_horizon, len(bars) - 1)
+        exit_time = bars.index[exit_idx]
+        exit_price = bars.iloc[exit_idx]['bid_close']
+        
+        return {
+            'label': 0,
+            'barrier_hit': 'time',
+            'pnl': exit_price - entry_price,
+            'exit_time': exit_time
+        }
+
