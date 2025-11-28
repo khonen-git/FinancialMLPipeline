@@ -20,8 +20,8 @@ venv/
 .history/
 .DS_Store
 
-# Project data (large)
-data/
+# Project data (large) - only root data/ directory
+/data/
 *.parquet
 *.feather
 *.csv
