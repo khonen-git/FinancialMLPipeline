@@ -158,25 +158,30 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 10: Train model (simplified, only one fold for demo)
         logger.info("Step 10: Training Random Forest")
-        for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
-            logger.info(f"Fold {fold}: train={len(train_idx)}, test={len(test_idx)}")
-            
-            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-            
-            # Train
-            rf_model = RandomForestCPU(cfg.models.random_forest)
-            rf_model.fit(X_train, y_train)
-            
-            # Evaluate
-            y_pred = rf_model.predict(X_test)
-            accuracy = (y_pred == y_test).mean()
-            
-            logger.info(f"Fold {fold} accuracy: {accuracy:.2%}")
-            mlflow.log_metric(f'fold_{fold}_accuracy', accuracy)
-            
-            # Only use first fold for demo
-            break
+        accuracy = 0.0  # Initialize
+        
+        if len(X) > 0:
+            for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                logger.info(f"Fold {fold}: train={len(train_idx)}, test={len(test_idx)}")
+                
+                X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+                
+                # Train
+                rf_model = RandomForestCPU(cfg.models.random_forest)
+                rf_model.fit(X_train, y_train)
+                
+                # Evaluate
+                y_pred = rf_model.predict(X_test)
+                accuracy = (y_pred == y_test).mean()
+                
+                logger.info(f"Fold {fold} accuracy: {accuracy:.2%}")
+                mlflow.log_metric(f'fold_{fold}_accuracy', accuracy)
+                
+                # Only use first fold for demo
+                break
+        else:
+            logger.warning("No data available for training, skipping model training")
         
         # Step 11: Backtesting (simplified placeholder)
         logger.info("Step 11: Backtesting")
