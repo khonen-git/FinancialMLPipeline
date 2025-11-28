@@ -1,0 +1,21 @@
+# Main Hydra configuration entrypoint
+
+defaults:
+  - experiment: base
+  - data: dukascopy
+  - assets: EURUSD
+  - session: default_fx
+  - labeling: triple_barrier
+  - features: base_features
+  - models: rf_cpu
+  - models/hmm: hmm
+  - risk: basic
+  - risk/monte_carlo: monte_carlo
+  - backtest: base_bt
+  - reporting: report
+  - mlflow: local
+  - runtime: hardware
+  - _self_
+
+# Override from command line with: +key=value
+

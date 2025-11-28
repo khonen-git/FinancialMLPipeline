@@ -1,0 +1,13 @@
+# Default FX session configuration (no overnight constraint)
+
+session:
+  timezone: "UTC"
+  session_start: "00:00"
+  session_end: "21:55"  # 5 min margin before rollover
+  friday_end: "20:00"  # early close before weekend
+  weekend_trading: false  # no Sat/Sun trading
+  
+  labeling:
+    max_horizon_bars: 50
+    min_horizon_bars: 10  # no labels if < 10 bars left before session_end
+

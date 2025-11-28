@@ -1,0 +1,12 @@
+# Base experiment configuration
+
+experiment:
+  name: "eurusd_tick1000_rf"
+  description: "Baseline RF on EURUSD with 1000-tick bars"
+  seed: 42
+  mode: "train"  # train | backtest-only | analysis
+  tags:
+    - "eurusd"
+    - "rf"
+    - "tick1000"
+

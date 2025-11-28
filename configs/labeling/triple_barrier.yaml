@@ -1,0 +1,30 @@
+# Triple barrier labeling configuration
+
+labeling:
+  type: "triple_barrier"
+  
+  # Distance specification: choose exactly one mode
+  distance_mode: "ticks"  # ticks | volatility | absolute
+  
+  # If distance_mode == "ticks"
+  tp_ticks: 100
+  sl_ticks: 100
+  
+  # If distance_mode == "volatility"
+  vol_lookback_bars: 50
+  tp_vol_mult: 2.0
+  sl_vol_mult: 2.0
+  
+  # If distance_mode == "absolute"
+  tp_absolute: 0.0010
+  sl_absolute: 0.0010
+  
+  max_horizon_bars: 50  # overridden by session-aware logic
+  min_horizon_bars: 10
+  
+  long_only: true  # base labels are long-only
+  
+  meta_label:
+    enabled: true
+    base_signal_source: "model"  # or "rule"
+

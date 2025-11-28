@@ -1,0 +1,9 @@
+# USDJPY asset configuration
+
+asset:
+  symbol: "USDJPY"
+  tick_size: 0.001  # minimum price increment
+  contract_size: 100000  # nominal size of 1 lot
+  quote_currency: "JPY"
+  category: "fx_major"
+

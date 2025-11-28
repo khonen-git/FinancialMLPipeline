@@ -1,0 +1,9 @@
+# EURUSD asset configuration
+
+asset:
+  symbol: "EURUSD"
+  tick_size: 0.00001  # minimum price increment (1 pip = 10 ticks)
+  contract_size: 100000  # nominal size of 1 lot
+  quote_currency: "USD"
+  category: "fx_major"
+
