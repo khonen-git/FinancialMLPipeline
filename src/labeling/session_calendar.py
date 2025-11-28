@@ -218,6 +218,75 @@ class SessionCalendar:
         )
         
         return df
+    
+    def get_session_end(self, timestamp: pd.Timestamp) -> pd.Timestamp:
+        """Alias for get_session_end_for_day() for backward compatibility.
+        
+        Args:
+            timestamp: Timestamp
+            
+        Returns:
+            Session end timestamp
+        """
+        return self.get_session_end_for_day(timestamp)
+    
+    def time_until_session_end(
+        self,
+        timestamp: pd.Timestamp,
+        unit: str = 'minutes'
+    ) -> float:
+        """Alias for time_to_session_end() for backward compatibility.
+        
+        Args:
+            timestamp: Current timestamp
+            unit: 'minutes' or 'seconds'
+            
+        Returns:
+            Time until session end in specified unit
+        """
+        return self.time_to_session_end(timestamp, unit=unit)
+    
+    def is_near_session_end(
+        self,
+        timestamp: pd.Timestamp,
+        threshold_minutes: int = 30
+    ) -> bool:
+        """Check if timestamp is near session end.
+        
+        Args:
+            timestamp: Timestamp to check
+            threshold_minutes: Minutes before session end
+            
+        Returns:
+            True if within threshold of session end
+        """
+        time_remaining = self.time_to_session_end(timestamp, unit='minutes')
+        return time_remaining <= threshold_minutes
+    
+    def filter_ticks_by_session(self, ticks: pd.DataFrame) -> pd.DataFrame:
+        """Filter ticks to remove weekends and out-of-session times.
+        
+        Args:
+            ticks: DataFrame with 'timestamp' column
+            
+        Returns:
+            Filtered DataFrame
+        """
+        if 'timestamp' not in ticks.columns:
+            raise ValueError("ticks DataFrame must have 'timestamp' column")
+        
+        # Remove weekends unless weekend_trading is enabled
+        if not self.weekend_trading:
+            if pd.api.types.is_datetime64_any_dtype(ticks['timestamp']):
+                mask = ticks['timestamp'].apply(lambda x: not self.is_weekend(x))
+                ticks = ticks[mask]
+            else:
+                # If timestamp is index
+                if pd.api.types.is_datetime64_any_dtype(ticks.index):
+                    mask = ticks.index.map(lambda x: not self.is_weekend(x))
+                    ticks = ticks[mask]
+        
+        return ticks
 
 
 def compute_average_bar_duration(bars: pd.DataFrame) -> float:

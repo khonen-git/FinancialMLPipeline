@@ -205,4 +205,83 @@ class SchemaDetector:
                 dtype_issues={},
                 error_message=str(e)
             )
+    
+    def validate_schema_simple(
+        self,
+        df: pd.DataFrame
+    ) -> tuple[bool, List[str]]:
+        """Simplified schema validation for testing.
+        
+        Args:
+            df: DataFrame to validate
+            
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+        
+        # Check required columns
+        missing_cols = [
+            col for col in self.REQUIRED_COLUMNS
+            if col not in df.columns
+        ]
+        
+        if missing_cols:
+            errors.append(f"Missing required columns: {missing_cols}")
+        
+        # Check data types
+        for col in self.REQUIRED_COLUMNS:
+            if col in df.columns:
+                if col == 'timestamp':
+                    # Timestamp can be int64 or datetime64
+                    if not (pd.api.types.is_integer_dtype(df[col]) or 
+                           pd.api.types.is_datetime64_any_dtype(df[col])):
+                        errors.append(f"Invalid timestamp type: {df[col].dtype}")
+                else:
+                    # Price columns should be numeric
+                    if not pd.api.types.is_numeric_dtype(df[col]):
+                        errors.append(f"Invalid type for {col}: {df[col].dtype}")
+        
+        is_valid = len(errors) == 0
+        return is_valid, errors
+    
+    def validate_and_clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Validate and clean a DataFrame.
+        
+        Args:
+            df: Raw DataFrame
+            
+        Returns:
+            Cleaned DataFrame with timestamp index
+        """
+        logger.info(f"Validating and cleaning {len(df)} rows")
+        
+        # Validate schema
+        is_valid, errors = self.validate_schema_simple(df)
+        
+        if not is_valid:
+            raise ValueError(f"Schema validation failed: {errors}")
+        
+        # Convert timestamp to datetime if needed
+        if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        
+        # Remove negative prices
+        initial_len = len(df)
+        df = df[(df['askPrice'] > 0) & (df['bidPrice'] > 0)]
+        if len(df) < initial_len:
+            logger.info(f"Removed {initial_len - len(df)} rows with negative prices")
+        
+        # Remove negative spreads (bid > ask)
+        initial_len = len(df)
+        df = df[df['askPrice'] >= df['bidPrice']]
+        if len(df) < initial_len:
+            logger.info(f"Removed {initial_len - len(df)} rows with negative spread")
+        
+        # Set timestamp as index
+        df = df.set_index('timestamp')
+        
+        logger.info(f"Cleaning complete: {len(df)} rows remaining")
+        
+        return df
 

@@ -65,7 +65,16 @@ class BarBuilder:
         for i in range(0, len(ticks), self.threshold):
             chunk = ticks.iloc[i:i + self.threshold]
             
+            # Only create bar if we have exactly the threshold (or it's the last chunk with enough ticks)
+            if len(chunk) < self.threshold and i + len(chunk) < len(ticks):
+                continue
+            
             if len(chunk) == 0:
+                continue
+            
+            # For consistency, only create bars with at least threshold ticks
+            # (don't create partial bars at the end)
+            if len(chunk) < self.threshold:
                 continue
             
             bar = self._aggregate_chunk(chunk)
