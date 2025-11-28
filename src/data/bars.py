@@ -177,6 +177,10 @@ class BarBuilder:
             # Convert if needed
             timestamp = pd.Timestamp(timestamp)
         
+        # Ensure timestamp has UTC timezone
+        if timestamp.tz is None:
+            timestamp = timestamp.tz_localize('UTC')
+        
         bar = {
             'timestamp': timestamp,
             'bid_open': chunk['bidPrice'].iloc[0],
