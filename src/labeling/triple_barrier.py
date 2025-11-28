@@ -100,7 +100,7 @@ def compute_triple_barrier(
             continue
         
         # Entry price = ask at t0
-        entry_price = prices.loc[bar_idx_start, 'ask_close']
+        entry_price = prices.iloc[bar_idx_start]['ask_close']
         
         # Scan forward up to effective_horizon_bars
         end_bar_idx = min(bar_idx_start + effective_horizon_bars, len(prices) - 1)
@@ -123,8 +123,8 @@ def compute_triple_barrier(
         )
         
         # Exit price = bid at exit time
-        exit_price = prices.loc[exit_bar_idx, 'bid_close']
-        exit_timestamp = prices.loc[exit_bar_idx, 'timestamp']
+        exit_price = prices.iloc[exit_bar_idx]['bid_close']
+        exit_timestamp = prices.index[exit_bar_idx]  # timestamp is in index now
         
         # Compute PnL
         pnl = exit_price - entry_price
