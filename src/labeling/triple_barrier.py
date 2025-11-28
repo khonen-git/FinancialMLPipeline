@@ -354,12 +354,13 @@ class TripleBarrierLabeler:
             avg_bar_duration_sec=avg_bar_duration_sec
         )
         
-        # Add bar_timestamp for alignment with features
-        if len(labels) > 0 and 'event_start' in labels.columns:
-            # Map event_start to the corresponding bar timestamp for accurate merge
-            labels['bar_timestamp'] = labels['event_start'].apply(
-                lambda ts: bars.index[bars.index.get_indexer([ts], method='nearest')[0]]
+        # Add bar_timestamp using the bar_index_start from labels
+        if len(labels) > 0 and 'bar_index_start' in labels.columns:
+            # Use the exact bar position to get the timestamp
+            labels['bar_timestamp'] = labels['bar_index_start'].apply(
+                lambda idx: bars.index[idx] if idx < len(bars) else None
             )
+            labels = labels.dropna(subset=['bar_timestamp'])
         
         return labels
     
