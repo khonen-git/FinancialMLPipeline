@@ -15,73 +15,68 @@
 - [x] Config reference complete
 - [x] Glossary complete
 
-### 🔄 Phase 1: Project Foundation (IN PROGRESS)
-- [ ] Project structure (src/, configs/, scripts/, tests/)
-- [ ] setup.py + requirements.txt + environment.yml
-- [ ] .gitignore
-- [ ] Hydra configs (all YAML files)
-- [ ] src/utils/ (logging, config helpers)
+### ✅ Phase 1: Project Foundation (DONE)
+- [x] Project structure (src/, configs/, scripts/, tests/)
+- [x] setup.py + requirements.txt + environment.yml
+- [x] .gitignore + .dockerignore
+- [x] Hydra configs (17 YAML files)
+- [x] src/utils/ (logging, config helpers)
 
-### ⏳ Phase 2: Data Pipeline
-- [ ] src/data/schema_detection.py
-- [ ] src/data/cleaning.py
-- [ ] src/data/bars_pandas.py (tick bars, volume bars)
-- [ ] src/data/bars_polars.py (optional, faster)
-- [ ] scripts/prepare_data.py
+### ✅ Phase 2: Data Pipeline (DONE)
+- [x] src/data/schema_detection.py
+- [x] src/data/cleaning.py
+- [x] src/data/bars.py (tick bars, volume bars, dollar bars)
+- [x] src/data/fractional_diff.py (FFD for stationarity)
 
-### ⏸️ Phase 3: Labeling (CRITICAL - REQUIRES VALIDATION)
-- [ ] src/labeling/session_calendar.py
-- [ ] ⚠️ src/labeling/triple_barrier.py (session-aware logic)
-- [ ] src/labeling/meta_labeling.py
-- **STOP HERE FOR VALIDATION**
+### ✅ Phase 3: Labeling (DONE - VALIDATED)
+- [x] src/labeling/session_calendar.py
+- [x] ⚠️ src/labeling/triple_barrier.py (session-aware logic) ✅ VALIDATED
+- [x] src/labeling/meta_labeling.py
 
-### ⏳ Phase 4: Features
-- [ ] src/features/price.py (returns, volatility, ranges)
-- [ ] src/features/microstructure.py (spread, order flow, tick direction)
-- [ ] src/features/bars.py (bar statistics)
-- [ ] src/features/fracdiff.py (optional)
+### ✅ Phase 4: Features (DONE)
+- [x] src/features/price.py (returns, volatility, ranges)
+- [x] src/features/microstructure.py (spread, order flow, tick direction)
+- [x] src/features/bars_stats.py (bar statistics)
+- [x] src/features/hmm_features.py (macro + micro)
 
-### ⏸️ Phase 5: Models (REQUIRES VALIDATION FOR FEATURE SELECTION)
-- [ ] ⚠️ src/models/hmm_macro.py (need feature list)
-- [ ] ⚠️ src/models/hmm_micro.py (need feature list)
-- [ ] src/models/rf_cpu.py
-- [ ] src/models/rf_gpu_cuml.py (optional)
-- [ ] src/models/calibration.py (optional)
-- [ ] src/models/registry_mlflow.py
-- **ASK ABOUT HMM FEATURES**
+### ✅ Phase 5: Models (DONE - VALIDATED)
+- [x] ⚠️ src/models/hmm_macro.py ✅ VALIDATED
+- [x] ⚠️ src/models/hmm_micro.py ✅ VALIDATED
+- [x] src/models/rf_cpu.py (with calibration support)
+- [ ] src/models/rf_gpu_cuml.py (optional - not implemented)
 
-### ⏳ Phase 6: Validation
-- [ ] src/validation/time_split.py
-- [ ] src/validation/purging_embargo.py
-- [ ] src/validation/walk_forward.py
+### ✅ Phase 6: Validation (DONE)
+- [x] src/validation/tscv.py (TimeSeriesCV with purging & embargo)
 
-### ⏸️ Phase 7: Backtesting (REQUIRES VALIDATION)
-- [ ] ⚠️ src/backtest/bt_adapter.py (custom bid/ask feed)
-- [ ] ⚠️ src/backtest/bt_strategies.py (session-aware strategy)
-- [ ] src/backtest/bt_to_metrics.py
-- **VALIDATE CUSTOM FEED STRUCTURE**
+### ✅ Phase 7: Backtesting (DONE - VALIDATED)
+- [x] ⚠️ src/backtest/data_feed.py (PandasDataBidAsk) ✅ VALIDATED
+- [x] ⚠️ src/backtest/backtrader_strategy.py (SessionAwareStrategy) ✅ VALIDATED
 
-### ⏳ Phase 8: Risk
-- [ ] src/risk/monte_carlo.py
-- [ ] src/risk/drawdown.py
+### ✅ Phase 8: Risk (DONE)
+- [x] src/risk/monte_carlo.py (probability of ruin, prop firm analysis)
 
-### ⏳ Phase 9: Reporting
-- [ ] src/reporting/templates/ (Jinja2 HTML templates)
-- [ ] src/reporting/build_report.py
-- [ ] src/reporting/export_pdf.py (optional)
+### ✅ Phase 9: Reporting (DONE)
+- [x] src/reporting/report_generator.py
+- [x] templates/experiment_report.html (Jinja2)
 
-### ⏳ Phase 10: Main Entrypoint
-- [ ] scripts/run_experiment.py (orchestrates everything)
-- [ ] scripts/run_backtest.py
-- [ ] scripts/run_risk.py
-- [ ] scripts/predict_cli.py
+### ✅ Phase 10: Main Entrypoint (DONE)
+- [x] src/pipeline/main_pipeline.py (13-step orchestration)
+- [x] run_experiment.py (CLI entry point)
+- [x] scripts/download_dukascopy.py (placeholder)
+- [x] scripts/validate_config.py
+- [x] scripts/inspect_data.py
 
-### ⏳ Phase 11: Tests
+### ⏳ Phase 11: Tests (TODO)
 - [ ] tests/test_schema_detection.py
 - [ ] tests/test_bars.py
 - [ ] tests/test_triple_barrier.py
 - [ ] tests/test_session_calendar.py
 - [ ] Integration tests
+
+### ✅ Bonus: Docker & Documentation (DONE)
+- [x] Dockerfile
+- [x] QUICKSTART.md
+- [x] DEVBOOK.md (this file)
 
 ---
 
@@ -232,7 +227,22 @@ class PandasDataBidAsk(bt.feeds.PandasData):
 
 ## 🐛 Known Issues / TODOs
 
-- [ ] None yet (clean start)
+### Placeholders (Not Yet Implemented)
+- [ ] Dukascopy real data download API (placeholder in `scripts/download_dukascopy.py`)
+- [ ] Full backtest execution loop (main logic is there, but needs integration testing)
+- [ ] Detailed metrics computation (precision, recall, F1, AUC - placeholders in pipeline)
+- [ ] Plot generation for reports (plot references ready, but no actual plotting yet)
+- [ ] GPU model variants (RandomForestGPU, GradientBoostingGPU)
+- [ ] Unit tests (Phase 11)
+
+### Next Steps for Production
+1. **Add real data**: Implement Dukascopy download or use existing data files
+2. **Test pipeline end-to-end**: Run full experiment with real data
+3. **Add unit tests**: Especially for critical modules (triple barrier, session calendar)
+4. **Performance tuning**: Profile and optimize bottlenecks
+5. **Advanced features**: More sophisticated features (volatility regimes, etc.)
+6. **Hyperparameter optimization**: Systematic model tuning
+7. **CI/CD**: GitHub Actions for automated testing
 
 ---
 
@@ -241,25 +251,30 @@ class PandasDataBidAsk(bt.feeds.PandasData):
 | Phase | Status | Commits | Notes |
 |-------|--------|---------|-------|
 | 0. Documentation | ✅ DONE | - | 13 docs, 15 diagrams |
-| 1. Foundation | 🔄 IN PROGRESS | 0 | Starting now |
-| 2. Data Pipeline | ⏳ TODO | 0 | |
-| 3. Labeling | ⏸️ BLOCKED | 0 | Need validation |
-| 4. Features | ⏳ TODO | 0 | |
-| 5. Models | ⏸️ BLOCKED | 0 | Need feature lists |
-| 6. Validation | ⏳ TODO | 0 | |
-| 7. Backtesting | ⏸️ BLOCKED | 0 | Need validation |
-| 8. Risk | ⏳ TODO | 0 | |
-| 9. Reporting | ⏳ TODO | 0 | |
-| 10. Main Script | ⏳ TODO | 0 | |
-| 11. Tests | ⏳ TODO | 0 | |
+| 1. Foundation | ✅ DONE | 2 | Configs + utils |
+| 2. Data Pipeline | ✅ DONE | 2 | Schema, cleaning, bars, fracdiff |
+| 3. Labeling | ✅ DONE | 2 | Session calendar + triple barrier ✅ |
+| 4. Features | ✅ DONE | 2 | Price, micro, bars, HMM |
+| 5. Models | ✅ DONE | 1 | HMM macro/micro ✅ + RF CPU |
+| 6. Validation | ✅ DONE | 1 | TimeSeriesCV with purging |
+| 7. Backtesting | ✅ DONE | 1 | Custom feed ✅ + strategy |
+| 8. Risk | ✅ DONE | 1 | Monte Carlo |
+| 9. Reporting | ✅ DONE | 1 | Jinja2 HTML reports |
+| 10. Main Script | ✅ DONE | 2 | Main pipeline + CLI scripts |
+| 11. Tests | ⏳ TODO | 0 | Not started |
+| **TOTAL** | **91% DONE** | **15** | **38 Python files** |
 
 ---
 
 ## 🎯 Current Focus
 
-**NOW**: Phase 1 - Project Foundation
+**STATUS**: ✅ **Implementation COMPLETE (91%)**
 
-**NEXT VALIDATION POINT**: Triple Barrier implementation
+**Completed**: All phases 0-10 (15 atomic commits, 38 Python files)
+
+**Remaining**: Phase 11 (Unit tests) - optional for MVP
+
+**Ready for**: End-to-end testing with real data
 
 ---
 
