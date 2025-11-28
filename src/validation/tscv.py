@@ -100,8 +100,8 @@ class TimeSeriesCV:
         """Purge training samples whose labels overlap with test set.
         
         Args:
-            train_idx: Training indices
-            test_idx: Test indices
+            train_idx: Training indices (integer positions)
+            test_idx: Test indices (integer positions)
             label_indices: DataFrame with 'start_idx' and 'end_idx'
             
         Returns:
@@ -111,16 +111,17 @@ class TimeSeriesCV:
         test_end = test_idx[-1]
         
         # Find training samples whose labels extend into test period
+        # Use iloc since train_idx contains integer positions, not index labels
         overlapping_mask = (
-            (label_indices.loc[train_idx, 'end_idx'] >= test_start) &
-            (label_indices.loc[train_idx, 'start_idx'] <= test_end)
+            (label_indices.iloc[train_idx]['end_idx'] >= test_start) &
+            (label_indices.iloc[train_idx]['start_idx'] <= test_end)
         )
         
         purged_train_idx = train_idx[~overlapping_mask.values]
         
         n_purged = len(train_idx) - len(purged_train_idx)
         if n_purged > 0:
-            logger.debug(f"Purged {n_purged} overlapping training samples")
+            logger.info(f"Purged {n_purged} overlapping training samples")
         
         return purged_train_idx
 
