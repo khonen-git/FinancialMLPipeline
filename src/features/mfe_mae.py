@@ -1,0 +1,167 @@
+"""MFE (Maximum Favorable Excursion) and MAE (Maximum Adverse Excursion) features.
+
+MFE = Maximum profit during the trade horizon
+MAE = Maximum loss during the trade horizon
+
+These features can be used to:
+1. Select optimal TP/SL based on quantile distribution
+2. As features for ML models (expected excursion ranges)
+"""
+
+import logging
+import pandas as pd
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+def compute_mfe_mae(
+    bars: pd.DataFrame,
+    horizon_bars: int = 32,
+    quantile: float = 0.5
+) -> pd.DataFrame:
+    """Compute MFE and MAE for each bar over a fixed horizon.
+    
+    MFE (Maximum Favorable Excursion): Maximum profit during horizon
+    MAE (Maximum Adverse Excursion): Maximum loss during horizon
+    
+    Args:
+        bars: DataFrame with bid/ask OHLC data
+        horizon_bars: Fixed horizon to compute excursions
+        quantile: Quantile to extract for TP/SL suggestion (0.5 = median)
+        
+    Returns:
+        DataFrame with MFE/MAE features
+    """
+    features = pd.DataFrame(index=bars.index)
+    
+    # Use ask for entry (long only), bid for exit
+    if 'ask_close' in bars.columns and 'bid_high' in bars.columns and 'bid_low' in bars.columns:
+        entry_price = bars['ask_close'].values
+        future_high = bars['bid_high'].values
+        future_low = bars['bid_low'].values
+    else:
+        # Fallback to close/high/low if bid/ask not available
+        entry_price = bars['close'].values
+        future_high = bars['high'].values
+        future_low = bars['low'].values
+    
+    n = len(bars)
+    mfe_values = np.full(n, np.nan)
+    mae_values = np.full(n, np.nan)
+    
+    # Compute MFE/MAE for each bar
+    for i in range(n - horizon_bars):
+        start_price = entry_price[i]
+        
+        # Future prices in the horizon
+        future_highs = future_high[i+1:i+1+horizon_bars]
+        future_lows = future_low[i+1:i+1+horizon_bars]
+        
+        # MFE: maximum profit (highest bid - ask entry)
+        mfe = (future_highs.max() - start_price) if len(future_highs) > 0 else 0
+        
+        # MAE: maximum loss (ask entry - lowest bid)
+        mae = (start_price - future_lows.min()) if len(future_lows) > 0 else 0
+        
+        mfe_values[i] = mfe
+        mae_values[i] = mae
+    
+    features['mfe'] = mfe_values
+    features['mae'] = mae_values
+    
+    # Compute ratio (profit/loss potential)
+    features['mfe_mae_ratio'] = np.where(
+        mae_values > 0,
+        mfe_values / mae_values,
+        np.nan
+    )
+    
+    # Rolling statistics (useful as features)
+    for window in [20, 50]:
+        features[f'mfe_mean_{window}'] = features['mfe'].rolling(window=window).mean()
+        features[f'mae_mean_{window}'] = features['mae'].rolling(window=window).mean()
+        features[f'mfe_std_{window}'] = features['mfe'].rolling(window=window).std()
+        features[f'mae_std_{window}'] = features['mae'].rolling(window=window).std()
+    
+    logger.info(f"Created {len(features.columns)} MFE/MAE features")
+    
+    # Log quantile statistics (useful for TP/SL selection)
+    valid_mfe = features['mfe'].dropna()
+    valid_mae = features['mae'].dropna()
+    
+    if len(valid_mfe) > 0:
+        mfe_quantile = valid_mfe.quantile(quantile)
+        mae_quantile = valid_mae.quantile(quantile)
+        
+        logger.info(f"MFE quantile {quantile:.1f}: {mfe_quantile:.5f} ({mfe_quantile/0.0001:.1f} ticks)")
+        logger.info(f"MAE quantile {quantile:.1f}: {mae_quantile:.5f} ({mae_quantile/0.0001:.1f} ticks)")
+        logger.info(f"Suggested TP (MFE q{quantile}): {mfe_quantile/0.0001:.0f} ticks")
+        logger.info(f"Suggested SL (MAE q{quantile}): {mae_quantile/0.0001:.0f} ticks")
+    
+    return features
+
+
+def suggest_tp_sl_from_mfe_mae(
+    bars: pd.DataFrame,
+    horizon_bars: int = 32,
+    quantile: float = 0.5,
+    tick_size: float = 0.0001
+) -> dict:
+    """Suggest TP/SL based on MFE/MAE quantile distribution.
+    
+    This implements the methodology from your previous project:
+    - Compute MFE/MAE over fixed horizon
+    - Select quantile (e.g. 0.5 = median)
+    - Use as TP/SL distances
+    
+    Args:
+        bars: DataFrame with OHLC data
+        horizon_bars: Fixed horizon for excursion computation
+        quantile: Quantile to extract (0.5 = median, 0.75 = 75th percentile)
+        tick_size: Tick size for the instrument
+        
+    Returns:
+        Dictionary with suggested TP/SL in ticks and price units
+    """
+    features = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=quantile)
+    
+    valid_mfe = features['mfe'].dropna()
+    valid_mae = features['mae'].dropna()
+    
+    if len(valid_mfe) == 0 or len(valid_mae) == 0:
+        logger.warning("Insufficient data for MFE/MAE analysis")
+        return {
+            'tp_ticks': 50,
+            'sl_ticks': 50,
+            'tp_price': 50 * tick_size,
+            'sl_price': 50 * tick_size
+        }
+    
+    mfe_quantile = valid_mfe.quantile(quantile)
+    mae_quantile = valid_mae.quantile(quantile)
+    
+    tp_ticks = int(mfe_quantile / tick_size)
+    sl_ticks = int(mae_quantile / tick_size)
+    
+    # Ensure minimum values
+    tp_ticks = max(tp_ticks, 10)
+    sl_ticks = max(sl_ticks, 10)
+    
+    logger.info(f"MFE/MAE analysis complete:")
+    logger.info(f"  Horizon: {horizon_bars} bars")
+    logger.info(f"  Quantile: {quantile}")
+    logger.info(f"  MFE q{quantile}: {mfe_quantile:.5f} → TP: {tp_ticks} ticks")
+    logger.info(f"  MAE q{quantile}: {mae_quantile:.5f} → SL: {sl_ticks} ticks")
+    logger.info(f"  Risk/Reward ratio: {tp_ticks/sl_ticks:.2f}")
+    
+    return {
+        'tp_ticks': tp_ticks,
+        'sl_ticks': sl_ticks,
+        'tp_price': tp_ticks * tick_size,
+        'sl_price': sl_ticks * tick_size,
+        'mfe_quantile': mfe_quantile,
+        'mae_quantile': mae_quantile,
+        'horizon_bars': horizon_bars
+    }
+

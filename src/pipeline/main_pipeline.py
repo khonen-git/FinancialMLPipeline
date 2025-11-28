@@ -120,12 +120,22 @@ def run_pipeline(cfg: DictConfig):
         ma_slope_features = create_ma_slope_features(bars, periods=[5, 10, 20, 50])
         ma_cross_features = create_ma_cross_features(bars)
         
+        # Add MFE/MAE features (Maximum Favorable/Adverse Excursion)
+        from src.features.mfe_mae import compute_mfe_mae
+        if cfg.features.get('mfe_mae', {}).get('enabled', False):
+            horizon = cfg.features.mfe_mae.get('horizon_bars', 32)
+            quantile = cfg.features.mfe_mae.get('quantile', 0.5)
+            mfe_mae_features = compute_mfe_mae(bars, horizon_bars=horizon, quantile=quantile)
+        else:
+            mfe_mae_features = pd.DataFrame(index=bars.index)
+        
         all_features = pd.concat([
             price_features, 
             micro_features, 
             bar_features,
             ma_slope_features,
-            ma_cross_features
+            ma_cross_features,
+            mfe_mae_features
         ], axis=1)
         logger.info(f"Created {len(all_features.columns)} total features")
         
