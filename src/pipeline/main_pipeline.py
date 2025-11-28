@@ -153,6 +153,12 @@ def run_pipeline(cfg: DictConfig):
         if 'bar_timestamp' in labels_df.columns:
             labels_indexed = labels_df.set_index('bar_timestamp')
             logger.info(f"Using bar_timestamp for merge. Features: {len(all_features)}, Labels: {len(labels_indexed)}")
+            
+            # Diagnostic: check for exact matches
+            common_idx = all_features.index.intersection(labels_indexed.index)
+            logger.info(f"Common timestamps before dropna: {len(common_idx)}")
+            if len(common_idx) > 0:
+                logger.info(f"First common timestamp: {common_idx[0]}")
         elif 'event_start' in labels_df.columns:
             labels_indexed = labels_df.set_index('event_start')
             logger.warning("Using event_start for merge (may cause alignment issues)")
@@ -160,7 +166,9 @@ def run_pipeline(cfg: DictConfig):
             labels_indexed = labels_df
         
         dataset = all_features.join(labels_indexed, how='inner')
+        logger.info(f"After join: {len(dataset)} samples")
         dataset = dataset.dropna()
+        logger.info(f"After dropna: {len(dataset)} samples")
         
         if len(dataset) > 0:
             X = dataset.drop(columns=['label', 'pnl', 'barrier_hit', 'event_start', 'event_end'], errors='ignore')
