@@ -196,8 +196,8 @@ def run_pipeline(cfg: DictConfig):
         
         logger.info(f"Final dataset: {len(X)} samples, {len(X.columns)} features")
         
-        # Step 9: Time-series CV
-        logger.info("Step 9: Time-series cross-validation")
+        # Step 9: Time-series CV with purging and embargo
+        logger.info("Step 9: Time-series cross-validation with purging and embargo")
         tscv = TimeSeriesCV(
             n_splits=cfg.validation.n_splits,
             train_duration=cfg.validation.train_duration,
@@ -205,6 +205,14 @@ def run_pipeline(cfg: DictConfig):
             purge_window=cfg.validation.purge_window,
             embargo_duration=cfg.validation.embargo_duration
         )
+        
+        # Prepare label_indices for advanced purging (avoid label overlap)
+        label_indices = pd.DataFrame({
+            'start_idx': labels_df.set_index('bar_timestamp').loc[dataset.index, 'bar_index_start'].values,
+            'end_idx': labels_df.set_index('bar_timestamp').loc[dataset.index, 'bar_index_end'].values
+        }, index=dataset.index)
+        
+        logger.info(f"Purge window: {cfg.validation.purge_window} bars, Embargo: {cfg.validation.embargo_duration} bars")
         
         # Step 10: Train model with walk-forward validation
         logger.info("Step 10: Training Random Forest with purged cross-validation")
