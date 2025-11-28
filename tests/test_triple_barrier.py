@@ -46,7 +46,7 @@ class TestTripleBarrierLabeler(unittest.TestCase):
     
     def test_compute_effective_horizon_regular(self):
         """Test effective horizon computation for regular case."""
-        dt = datetime(2024, 1, 9, 10, 0)  # Tuesday 10:00, far from session end
+        dt = pd.Timestamp('2024-01-09 10:00:00', tz='UTC')
         bars_remaining = self.labeler._compute_effective_horizon_bars(dt, bar_duration_minutes=5)
         
         # Should be max_horizon_bars since we're far from session end
@@ -54,7 +54,7 @@ class TestTripleBarrierLabeler(unittest.TestCase):
     
     def test_compute_effective_horizon_near_session_end(self):
         """Test effective horizon when near session end."""
-        dt = datetime(2024, 1, 9, 21, 30)  # Tuesday 21:30, only 25min until 21:55
+        dt = pd.Timestamp('2024-01-09 21:30:00', tz='UTC')
         bars_remaining = self.labeler._compute_effective_horizon_bars(dt, bar_duration_minutes=5)
         
         # Should be limited by session end (25min / 5min = 5 bars)
@@ -62,7 +62,7 @@ class TestTripleBarrierLabeler(unittest.TestCase):
     
     def test_compute_effective_horizon_past_session(self):
         """Test effective horizon past session end."""
-        dt = datetime(2024, 1, 9, 22, 30)  # Tuesday 22:30, past session end
+        dt = pd.Timestamp('2024-01-09 22:30:00', tz='UTC')
         bars_remaining = self.labeler._compute_effective_horizon_bars(dt, bar_duration_minutes=5)
         
         # Should be 0 (past session)
@@ -71,7 +71,7 @@ class TestTripleBarrierLabeler(unittest.TestCase):
     def test_label_single_event_tp_hit(self):
         """Test labeling when TP is hit."""
         # Create simple bar data
-        dates = pd.date_range('2024-01-09 10:00', periods=20, freq='5min')
+        dates = pd.date_range('2024-01-09 10:00', periods=20, freq='5min', tz='UTC')
         
         # Entry at 1.0700, TP at 1.0710 (10 ticks up)
         bid_high = [1.0700 + i * 0.0002 for i in range(20)]  # Going up
@@ -104,7 +104,7 @@ class TestTripleBarrierLabeler(unittest.TestCase):
     
     def test_label_single_event_sl_hit(self):
         """Test labeling when SL is hit."""
-        dates = pd.date_range('2024-01-09 10:00', periods=20, freq='5min')
+        dates = pd.date_range('2024-01-09 10:00', periods=20, freq='5min', tz='UTC')
         
         # Entry at 1.0705 (ask), SL at 1.0695 (10 ticks down from entry)
         bid_low = [1.0700 - i * 0.0002 for i in range(20)]  # Going down
@@ -136,7 +136,7 @@ class TestTripleBarrierLabeler(unittest.TestCase):
     
     def test_label_single_event_time_barrier(self):
         """Test labeling when time barrier is hit."""
-        dates = pd.date_range('2024-01-09 10:00', periods=60, freq='5min')
+        dates = pd.date_range('2024-01-09 10:00', periods=60, freq='5min', tz='UTC')
         
         # Prices stay flat, no TP/SL hit
         bars = pd.DataFrame({
@@ -166,7 +166,7 @@ class TestTripleBarrierLabeler(unittest.TestCase):
     def test_skip_event_near_session_end(self):
         """Test skipping events too close to session end."""
         # Event very close to session end
-        dates = pd.date_range('2024-01-09 21:50', periods=10, freq='1min')
+        dates = pd.date_range('2024-01-09 21:50', periods=10, freq='1min', tz='UTC')
         
         bars = pd.DataFrame({
             'timestamp': dates,
@@ -215,7 +215,7 @@ class TestTripleBarrierEdgeCases(unittest.TestCase):
         calendar = SessionCalendar(session_config)
         labeler = TripleBarrierLabeler(config, calendar)
         
-        dates = pd.date_range('2024-01-09 10:00', periods=10, freq='5min')
+        dates = pd.date_range('2024-01-09 10:00', periods=10, freq='5min', tz='UTC')
         
         # Entry: ask_close = 1.0705
         # TP: bid_high >= 1.0715 (1.0705 + 10*0.0001)

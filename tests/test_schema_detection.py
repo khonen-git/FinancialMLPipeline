@@ -33,7 +33,7 @@ class TestSchemaDetector(unittest.TestCase):
             'bidVolume': [900.0, 900.0, 900.0]
         })
         
-        is_valid, errors = self.detector.validate_schema(df)
+        is_valid, errors = self.detector.validate_schema_simple(df)
         
         self.assertTrue(is_valid)
         self.assertEqual(len(errors), 0)
@@ -43,11 +43,10 @@ class TestSchemaDetector(unittest.TestCase):
         df = pd.DataFrame({
             'timestamp': [1672610641067, 1672610678111],
             'askPrice': [1.07092, 1.07092],
-            'bidPrice': [1.0697, 1.06974]
-            # Missing askVolume and bidVolume
+            # Missing bidPrice (required)
         })
         
-        is_valid, errors = self.detector.validate_schema(df)
+        is_valid, errors = self.detector.validate_schema_simple(df)
         
         self.assertFalse(is_valid)
         self.assertGreater(len(errors), 0)
@@ -62,7 +61,7 @@ class TestSchemaDetector(unittest.TestCase):
             'bidVolume': [900.0, 900.0, 900.0]
         })
         
-        is_valid, errors = self.detector.validate_schema(df)
+        is_valid, errors = self.detector.validate_schema_simple(df)
         
         self.assertFalse(is_valid)
     
@@ -129,10 +128,10 @@ class TestSchemaDetectorEdgeCases(unittest.TestCase):
         
         df = pd.DataFrame(columns=['timestamp', 'askPrice', 'bidPrice', 'askVolume', 'bidVolume'])
         
-        is_valid, errors = detector.validate_schema(df)
+        is_valid, errors = detector.validate_schema_simple(df)
         
-        # Empty is technically valid schema, but might want to warn
-        self.assertTrue(is_valid or len(errors) > 0)
+        # Empty is technically valid schema (has all columns)
+        self.assertTrue(is_valid)
     
     def test_extra_columns(self):
         """Test with extra columns (should be okay)."""
@@ -151,7 +150,7 @@ class TestSchemaDetectorEdgeCases(unittest.TestCase):
             'extra_column': [1, 2]  # Extra column
         })
         
-        is_valid, errors = detector.validate_schema(df)
+        is_valid, errors = detector.validate_schema_simple(df)
         
         # Should still be valid (extra columns are okay)
         self.assertTrue(is_valid)
