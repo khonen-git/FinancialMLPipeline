@@ -177,17 +177,20 @@ def _check_barriers(
     
     # For each bar, check if TP or SL hit using bid high/low
     for i, (idx, row) in enumerate(future_prices.iterrows()):
+        # Calculate absolute bar position
+        bar_position = start_bar_idx + 1 + i
+        
         # TP check: bid_high >= tp_level
         if row['bid_high'] >= tp_level:
-            return 1, 'tp', idx
+            return 1, 'tp', bar_position
         
         # SL check: bid_low <= sl_level
         if row['bid_low'] <= sl_level:
-            return -1, 'sl', idx
+            return -1, 'sl', bar_position
     
     # Time barrier hit (neither TP nor SL)
-    last_idx = future_prices.index[-1]
-    return 0, 'time', last_idx
+    last_bar_position = start_bar_idx + len(future_prices)
+    return 0, 'time', last_bar_position
 
 
 def convert_ticks_to_price(
