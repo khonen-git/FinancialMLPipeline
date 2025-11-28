@@ -1,0 +1,28 @@
+# Base feature engineering configuration
+
+features:
+  price:
+    enabled: true
+    returns_lookbacks: [1, 5, 20]
+    volatility_lookbacks: [20, 50]
+    range_lookbacks: [20]
+  
+  microstructure:
+    enabled: true
+    order_flow_lookbacks: [10, 20]
+    spread_stats_lookbacks: [10]
+  
+  bars:
+    enabled: true
+    include_volume: true
+    include_tick_count: true
+  
+  fracdiff:
+    enabled: false
+    d: 0.4
+    columns: ["close"]
+  
+  scaling:
+    enabled: false  # if we decide to scale features
+    method: "robust"  # robust | standard | none
+

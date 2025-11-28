@@ -1,0 +1,27 @@
+# HMM (macro + micro) configuration
+
+hmm:
+  macro:
+    enabled: true
+    n_states: 3
+    covariance_type: "full"
+    n_init: 5
+    max_iter: 500
+    features:
+      - "ret_long"
+      - "vol_long"
+      - "trend_slope"
+      - "trend_strength"
+  
+  micro:
+    enabled: true
+    n_states: 3
+    covariance_type: "full"
+    n_init: 5
+    max_iter: 500
+    features:
+      - "of_imbalance"
+      - "spread"
+      - "spread_change"
+      - "tick_direction"
+

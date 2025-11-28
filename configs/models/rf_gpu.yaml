@@ -1,0 +1,17 @@
+# Random Forest GPU (cuML) configuration
+
+model:
+  name: "rf_gpu"
+  type: "random_forest"
+  backend: "cuml"
+  
+  params:
+    n_estimators: 200
+    max_depth: 10
+    min_samples_leaf: 5
+    n_streams: 4
+  
+  calibration:
+    enabled: false
+    method: "isotonic"
+

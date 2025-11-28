@@ -1,0 +1,21 @@
+# Reporting configuration
+
+reporting:
+  enabled: true
+  
+  html:
+    enabled: true
+    output_path: "reports/html"
+  
+  pdf:
+    enabled: false  # can be turned on later
+  
+  include_sections:
+    data_overview: true
+    modelling: true
+    walk_forward: true
+    backtest: true
+    risk: true
+    feature_importance: true
+    regimes: true
+

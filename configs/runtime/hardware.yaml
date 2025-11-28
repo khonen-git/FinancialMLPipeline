@@ -1,0 +1,8 @@
+# Runtime / Hardware configuration
+
+runtime:
+  use_gpu: false  # true if RAPIDS / cuML available
+  n_jobs: -1  # for CPU-bound models
+  memory_limit_gb: 16  # soft limit for certain operations
+  deterministic: true  # enforce deterministic behavior where possible
+

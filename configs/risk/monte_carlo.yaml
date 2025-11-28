@@ -1,0 +1,15 @@
+# Monte Carlo simulation configuration
+
+risk:
+  monte_carlo:
+    enabled: true
+    n_sims: 1000
+    block_bootstrap: false
+    block_size: 20  # used if block_bootstrap == true
+    
+    prop_firm:
+      enabled: true
+      max_daily_loss: 0.03
+      max_total_loss: 0.10
+      target_profit: 0.10
+

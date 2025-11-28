@@ -1,0 +1,18 @@
+# MLflow local tracking configuration
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "trading_ml"
+  autolog: false
+  
+  log_artifacts:
+    config_dump: true
+    equity_curves: true
+    trade_logs: true
+    reports: true
+    models: true
+  
+  tags:
+    project: "trading-ml-pipeline"
+

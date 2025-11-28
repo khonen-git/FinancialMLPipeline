@@ -1,0 +1,13 @@
+# Meta-label model configuration
+
+meta_model:
+  enabled: true
+  type: "random_forest"
+  backend: "sklearn"
+  
+  params:
+    n_estimators: 200
+    max_depth: 8
+    min_samples_leaf: 5
+    n_jobs: -1
+

@@ -1,0 +1,28 @@
+# Backtrader backtest configuration
+
+backtest:
+  engine: "backtrader"
+  
+  sizing:
+    mode: "fixed"
+    size: 1.0  # in lots or units
+  
+  commission:
+    type: "per_lot"
+    value: 0.0  # raw spread account, commission included in spread
+  
+  slippage:
+    enabled: false  # can be turned on later
+    model: "none"  # none | fixed | proportional
+    fixed_slippage_ticks: 1.0
+  
+  position_sizing:
+    use_risk_model: true  # read from capital/risk_model config
+  
+  session:
+    use_session_calendar: true
+  
+  logs:
+    save_trades: true
+    save_equity: true
+
