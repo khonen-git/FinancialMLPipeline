@@ -94,10 +94,14 @@ def compute_mfe_mae(
         mfe_quantile = valid_mfe.quantile(quantile)
         mae_quantile = valid_mae.quantile(quantile)
         
-        logger.info(f"MFE quantile {quantile:.1f}: {mfe_quantile:.5f} ({mfe_quantile/0.0001:.1f} ticks)")
-        logger.info(f"MAE quantile {quantile:.1f}: {mae_quantile:.5f} ({mae_quantile/0.0001:.1f} ticks)")
-        logger.info(f"Suggested TP (MFE q{quantile}): {mfe_quantile/0.0001:.0f} ticks")
-        logger.info(f"Suggested SL (MAE q{quantile}): {mae_quantile/0.0001:.0f} ticks")
+        # For EURUSD: 1 pip = 0.0001, 1 tick = 0.00001
+        # So to convert to ticks, divide by 0.00001 (or divide by 0.0001 and multiply by 10)
+        tick_size_actual = 0.00001  # Fractional pip for EURUSD
+        
+        logger.info(f"MFE quantile {quantile:.1f}: {mfe_quantile:.5f} ({mfe_quantile/tick_size_actual:.1f} ticks, {mfe_quantile/0.0001:.1f} pips)")
+        logger.info(f"MAE quantile {quantile:.1f}: {mae_quantile:.5f} ({mae_quantile/tick_size_actual:.1f} ticks, {mae_quantile/0.0001:.1f} pips)")
+        logger.info(f"Suggested TP (MFE q{quantile}): {mfe_quantile/tick_size_actual:.0f} ticks = {mfe_quantile/0.0001:.1f} pips")
+        logger.info(f"Suggested SL (MAE q{quantile}): {mae_quantile/tick_size_actual:.0f} ticks = {mae_quantile/0.0001:.1f} pips")
     
     return features
 
@@ -141,8 +145,21 @@ def suggest_tp_sl_from_mfe_mae(
     mfe_quantile = valid_mfe.quantile(quantile)
     mae_quantile = valid_mae.quantile(quantile)
     
-    tp_ticks = int(mfe_quantile / tick_size)
-    sl_ticks = int(mae_quantile / tick_size)
+    # CRITICAL: tick_size parameter might be pip_size (0.0001), not true tick size (0.00001)
+    # For EURUSD: 1 pip = 10 ticks
+    # To be safe, calculate in both units
+    tp_price_units = mfe_quantile
+    sl_price_units = mae_quantile
+    
+    # If tick_size is actually pip_size (0.0001), multiply by 10 to get ticks
+    if tick_size >= 0.0001:
+        # This is pip_size, not tick_size
+        tp_ticks = int(mfe_quantile / (tick_size / 10))
+        sl_ticks = int(mae_quantile / (tick_size / 10))
+    else:
+        # This is true tick_size (0.00001)
+        tp_ticks = int(mfe_quantile / tick_size)
+        sl_ticks = int(mae_quantile / tick_size)
     
     # Ensure minimum values
     tp_ticks = max(tp_ticks, 10)
@@ -151,8 +168,8 @@ def suggest_tp_sl_from_mfe_mae(
     logger.info(f"MFE/MAE analysis complete:")
     logger.info(f"  Horizon: {horizon_bars} bars")
     logger.info(f"  Quantile: {quantile}")
-    logger.info(f"  MFE q{quantile}: {mfe_quantile:.5f} → TP: {tp_ticks} ticks")
-    logger.info(f"  MAE q{quantile}: {mae_quantile:.5f} → SL: {sl_ticks} ticks")
+    logger.info(f"  MFE q{quantile}: {mfe_quantile:.5f} → TP: {tp_ticks} ticks ({tp_ticks/10:.1f} pips)")
+    logger.info(f"  MAE q{quantile}: {mae_quantile:.5f} → SL: {sl_ticks} ticks ({sl_ticks/10:.1f} pips)")
     logger.info(f"  Risk/Reward ratio: {tp_ticks/sl_ticks:.2f}")
     
     return {
