@@ -21,6 +21,7 @@ import mlflow
 
 from src.utils.logging_config import setup_logging
 from src.data.schema_detection import SchemaDetector
+from src.data.bars import BarBuilder
 from src.labeling.session_calendar import SessionCalendar
 from src.labeling.triple_barrier import TripleBarrierLabeler
 from src.features.price import create_price_features
@@ -83,11 +84,11 @@ def run_pipeline(cfg: DictConfig):
         logger.info("Step 3: Initializing session calendar")
         calendar = SessionCalendar(cfg.session)
         
-        # Step 4: Bar construction (placeholder - would be implemented)
+        # Step 4: Bar construction
         logger.info("Step 4: Bar construction")
-        # bars = build_bars(ticks, cfg.data.bars)  # To be implemented
-        # For now, use placeholder
-        bars = ticks.copy()  # Simplified
+        bar_builder = BarBuilder(cfg.data.bars)
+        bars = bar_builder.build_bars(ticks)
+        logger.info(f"Built {len(bars)} bars")
         
         # Step 5: Feature engineering
         logger.info("Step 5: Feature engineering")
