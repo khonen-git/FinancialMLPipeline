@@ -1,0 +1,89 @@
+# @package _global_
+# Backtest sur données 2024 avec modèle entraîné sur 2023
+
+experiment:
+  name: "eurusd_2024_backtest"
+  description: "Backtest sur EURUSD 2024 avec modèle 2023"
+  tags: ["eurusd", "2024", "backtest", "validation"]
+
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.0001
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
+session:
+  session_start: "00:00"
+  session_end: "21:55"
+  friday_end: "20:00"
+  weekend_trading: false
+
+data:
+  dukascopy:
+    raw_dir: "data/raw"
+    filename: "EURUSD_2024.csv"  # Données 2024 pour backtest
+    format: "csv"
+  bars:
+    type: "tick"
+    threshold: 1000  # 1000 ticks per bar
+
+labeling:
+  triple_barrier:
+    tp_ticks: 100
+    sl_ticks: 100
+    max_horizon_bars: 50
+    min_horizon_bars: 10
+    distance_mode: "ticks"
+
+features:
+  returns_lookbacks: [1, 5, 10, 20]
+  volatility_lookbacks: [10, 20, 50]
+  range_lookbacks: [10, 20]
+  spread_stats_lookbacks: [5, 10]
+  order_flow_lookbacks: [5, 10, 20]
+
+models:
+  hmm:
+    macro:
+      enabled: false  # Désactivé pour ce test
+      n_states: 3
+    micro:
+      enabled: false  # Désactivé pour ce test
+      n_states: 3
+  random_forest:
+    params:
+      n_estimators: 200
+      max_depth: 10
+      min_samples_leaf: 5
+      n_jobs: -1
+      class_weight: "balanced"
+    calibration:
+      enabled: false
+
+validation:
+  n_splits: 1  # Un seul fold pour backtest simple
+  train_duration: 5000
+  test_duration: 10000  # Utiliser plus de données pour le test
+  purge_window: 50
+  embargo_duration: 20
+
+risk:
+  mc_simulations: 1000
+  starting_capital: 10000.0
+  max_daily_loss: 0.03
+  max_total_drawdown: 0.2
+
+reporting:
+  enabled: true
+  output_dir: "outputs/reports"
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "eurusd_2024_backtest"
+
+runtime:
+  log_level: "INFO"
+  gpu_enabled: false
+
