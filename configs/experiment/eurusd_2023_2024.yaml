@@ -16,6 +16,12 @@ assets:
   min_lot: 0.01
   max_lot: 100.0
 
+session:
+  session_start: "00:00"
+  session_end: "21:55"
+  friday_end: "20:00"
+  weekend_trading: false
+
 data:
   dukascopy:
     raw_dir: "data/raw"
@@ -33,7 +39,21 @@ labeling:
     min_horizon_bars: 10
     distance_mode: "ticks"
 
+features:
+  returns_lookbacks: [1, 5, 10, 20]
+  volatility_lookbacks: [10, 20, 50]
+  range_lookbacks: [10, 20]
+  spread_stats_lookbacks: [5, 10]
+  order_flow_lookbacks: [5, 10, 20]
+
 models:
+  hmm:
+    macro:
+      enabled: false  # Disabled for speed
+      n_states: 3
+    micro:
+      enabled: false  # Disabled for speed
+      n_states: 3
   random_forest:
     params:
       n_estimators: 200  # More trees for production
@@ -42,18 +62,21 @@ models:
       n_jobs: -1
       class_weight: "balanced"
     calibration:
-      enabled: true
+      enabled: false  # Disabled for speed
       method: "isotonic"
 
 validation:
-  n_splits: 5
+  n_splits: 3  # Reduced for speed
   train_duration: 5000  # ~5000 bars for training
   test_duration: 1000  # ~1000 bars for testing
   purge_window: 50
   embargo_duration: 20
 
 risk:
-  mc_simulations: 10000  # More simulations for accurate estimates
+  mc_simulations: 1000  # Reduced for speed
+  starting_capital: 10000.0
+  max_daily_loss: 0.03
+  max_total_drawdown: 0.2
 
 runtime:
   log_level: "INFO"
