@@ -115,8 +115,19 @@ def run_pipeline(cfg: DictConfig):
         micro_features = create_microstructure_features(bars, cfg.features)
         bar_features = create_bar_stats_features(bars, cfg.features)
         
-        all_features = pd.concat([price_features, micro_features, bar_features], axis=1)
-        logger.info(f"Created {len(all_features.columns)} features")
+        # Add MA slopes features (proven from previous project)
+        from src.features.ma_slopes import create_ma_slope_features, create_ma_cross_features
+        ma_slope_features = create_ma_slope_features(bars, periods=[5, 10, 20, 50])
+        ma_cross_features = create_ma_cross_features(bars)
+        
+        all_features = pd.concat([
+            price_features, 
+            micro_features, 
+            bar_features,
+            ma_slope_features,
+            ma_cross_features
+        ], axis=1)
+        logger.info(f"Created {len(all_features.columns)} total features")
         
         # Step 6: HMM regime detection (optional)
         logger.info("Step 6: HMM regime detection")
