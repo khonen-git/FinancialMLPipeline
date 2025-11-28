@@ -68,9 +68,11 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 1: Load data
         logger.info("Step 1: Loading data")
-        data_path = Path(cfg.data.dukascopy.raw_dir) / f"{cfg.assets.symbol}.parquet"
+        # Use filename from config if specified, otherwise construct from symbol
+        filename = cfg.data.dukascopy.get('filename', f"{cfg.assets.symbol}.parquet")
+        data_path = Path(cfg.data.dukascopy.raw_dir) / filename
         ticks = pd.read_parquet(data_path)
-        logger.info(f"Loaded {len(ticks)} ticks")
+        logger.info(f"Loaded {len(ticks)} ticks from {data_path}")
         
         # Step 2: Schema detection and cleaning
         logger.info("Step 2: Schema detection and cleaning")
