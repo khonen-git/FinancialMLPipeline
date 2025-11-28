@@ -84,16 +84,19 @@ def run_pipeline(cfg: DictConfig):
             # Ensure timestamp column is datetime
             if 'timestamp' in ticks.columns:
                 ticks['timestamp'] = pd.to_datetime(ticks['timestamp'], unit='ms', utc=True)
-            ticks = ticks.set_index('timestamp')
         else:
             ticks = pd.read_parquet(data_path)
         
         logger.info(f"Loaded {len(ticks)} ticks from {data_path}")
         
-        # Step 2: Schema detection and cleaning
+        # Step 2: Schema detection and cleaning (before setting index)
         logger.info("Step 2: Schema detection and cleaning")
         detector = SchemaDetector(cfg.data.dukascopy)
         ticks = detector.validate_and_clean(ticks)
+        
+        # Set timestamp as index after validation
+        if 'timestamp' in ticks.columns:
+            ticks = ticks.set_index('timestamp')
         
         # Step 3: Session calendar
         logger.info("Step 3: Initializing session calendar")
