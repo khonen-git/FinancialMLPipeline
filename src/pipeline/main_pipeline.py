@@ -99,21 +99,27 @@ def run_pipeline(cfg: DictConfig):
         all_features = pd.concat([price_features, micro_features, bar_features], axis=1)
         logger.info(f"Created {len(all_features.columns)} features")
         
-        # Step 6: HMM regimes
+        # Step 6: HMM regime detection (optional)
         logger.info("Step 6: HMM regime detection")
-        macro_features = create_macro_hmm_features(bars, cfg.models.hmm.macro)
-        macro_hmm = MacroHMM(cfg.models.hmm.macro)
-        macro_hmm.fit(macro_features)
-        macro_regimes = macro_hmm.predict(macro_features)
+        if cfg.models.get('hmm', {}).get('macro', {}).get('enabled', False):
+            logger.info("Training Macro HMM")
+            macro_features = create_macro_hmm_features(bars, cfg.models.hmm.macro)
+            macro_hmm = MacroHMM(cfg.models.hmm.macro)
+            macro_hmm.fit(macro_features)
+            macro_regimes = macro_hmm.predict(macro_features)
+            all_features['macro_regime'] = macro_regimes
+        else:
+            logger.info("Macro HMM disabled - skipping")
         
-        micro_features_hmm = create_micro_hmm_features(bars, ticks, cfg.models.hmm.micro)
-        micro_hmm = MicroHMM(cfg.models.hmm.micro)
-        micro_hmm.fit(micro_features_hmm)
-        micro_regimes = micro_hmm.predict(micro_features_hmm)
-        
-        # Add regimes to features
-        all_features['macro_regime'] = macro_regimes
-        all_features['micro_regime'] = micro_regimes
+        if cfg.models.get('hmm', {}).get('micro', {}).get('enabled', False):
+            logger.info("Training Micro HMM")
+            micro_features_hmm = create_micro_hmm_features(bars, ticks, cfg.models.hmm.micro)
+            micro_hmm = MicroHMM(cfg.models.hmm.micro)
+            micro_hmm.fit(micro_features_hmm)
+            micro_regimes = micro_hmm.predict(micro_features_hmm)
+            all_features['micro_regime'] = micro_regimes
+        else:
+            logger.info("Micro HMM disabled - skipping")
         
         # Step 7: Labeling
         logger.info("Step 7: Triple barrier labeling")
