@@ -131,11 +131,18 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 8: Merge features and labels
         logger.info("Step 8: Merging features and labels")
-        dataset = all_features.join(labels_df, how='inner')
+        # Align indexes: labels use event_start, features use bar timestamp
+        labels_indexed = labels_df.set_index('event_start') if 'event_start' in labels_df.columns else labels_df
+        dataset = all_features.join(labels_indexed, how='inner')
         dataset = dataset.dropna()
         
-        X = dataset.drop(columns=['label', 'pnl', 'barrier_hit'])
-        y = dataset['label']
+        if len(dataset) > 0:
+            X = dataset.drop(columns=['label', 'pnl', 'barrier_hit'], errors='ignore')
+            y = dataset['label']
+        else:
+            logger.warning(f"Empty merge! Features index sample: {all_features.index[:3].tolist()}, Labels index sample: {labels_indexed.index[:3].tolist() if len(labels_indexed) > 0 else 'empty'}")
+            X = all_features.iloc[:0]  # Empty DataFrame with columns
+            y = pd.Series([], dtype=int)
         
         logger.info(f"Final dataset: {len(X)} samples, {len(X.columns)} features")
         
