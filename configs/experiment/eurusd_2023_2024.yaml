@@ -78,6 +78,15 @@ risk:
   max_daily_loss: 0.03
   max_total_drawdown: 0.2
 
+reporting:
+  enabled: true
+  output_dir: "outputs/reports"
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "eurusd_2023_train_2024_test"
+
 runtime:
   log_level: "INFO"
   gpu_enabled: false
