@@ -156,8 +156,17 @@ def run_pipeline(cfg: DictConfig):
         labeler = TripleBarrierLabeler(cfg.labeling.triple_barrier, calendar)
         labels_df = labeler.label_dataset(bars, all_features.index)
         
-        logger.info(f"Created {len(labels_df)} labels")
+        logger.info(f"Created {len(labels_df)} labels (before filtering)")
         mlflow.log_metric('n_labels', len(labels_df))
+        
+        # DROP label=0 (time barrier) - keep only TP (+1) and SL (-1)
+        # Binary classification for direction prediction only
+        labels_before = len(labels_df)
+        labels_df = labels_df[labels_df['label'] != 0].copy()
+        labels_after = len(labels_df)
+        logger.info(f"Dropped label=0: {labels_before} → {labels_after} ({labels_after/labels_before*100:.1f}% retained)")
+        logger.info(f"Binary classification: +1 (TP) vs -1 (SL) only")
+        mlflow.log_metric('n_labels_binary', labels_after)
         
         # Step 8: Merge features and labels
         logger.info("Step 8: Merging features and labels")
