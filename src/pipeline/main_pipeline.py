@@ -169,6 +169,17 @@ def run_pipeline(cfg: DictConfig):
         logger.info(f"Created {len(labels_df)} labels (before filtering)")
         mlflow.log_metric('n_labels', len(labels_df))
         
+        # Log label distribution BEFORE filtering
+        if 'label' in labels_df.columns:
+            label_counts = labels_df['label'].value_counts()
+            logger.info(f"Label distribution BEFORE filtering:")
+            for label_val, count in label_counts.items():
+                pct = count / len(labels_df) * 100
+                logger.info(f"  Label {label_val}: {count} ({pct:.1f}%)")
+            mlflow.log_metric('n_labels_tp', label_counts.get(1, 0))
+            mlflow.log_metric('n_labels_sl', label_counts.get(-1, 0))
+            mlflow.log_metric('n_labels_time', label_counts.get(0, 0))
+        
         # DROP label=0 (time barrier) - keep only TP (+1) and SL (-1)
         # Binary classification for direction prediction only
         labels_before = len(labels_df)
@@ -176,6 +187,15 @@ def run_pipeline(cfg: DictConfig):
         labels_after = len(labels_df)
         logger.info(f"Dropped label=0: {labels_before} → {labels_after} ({labels_after/labels_before*100:.1f}% retained)")
         logger.info(f"Binary classification: +1 (TP) vs -1 (SL) only")
+        
+        # Log distribution AFTER filtering
+        if len(labels_df) > 0 and 'label' in labels_df.columns:
+            label_counts_after = labels_df['label'].value_counts()
+            logger.info(f"Label distribution AFTER filtering:")
+            for label_val, count in label_counts_after.items():
+                pct = count / len(labels_df) * 100
+                logger.info(f"  Label {label_val}: {count} ({pct:.1f}%)")
+        
         mlflow.log_metric('n_labels_binary', labels_after)
         
         # Step 8: Merge features and labels
