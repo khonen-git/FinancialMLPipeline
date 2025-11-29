@@ -99,8 +99,20 @@ def compute_triple_barrier(
             skipped_count += 1
             continue
         
-        # Entry price = ask at t0
-        entry_price = prices.iloc[bar_idx_start]['ask_close']
+        # Entry price = ask at t0 (we buy at ask)
+        entry_price_ask = prices.iloc[bar_idx_start]['ask_close']
+        entry_price_bid = prices.iloc[bar_idx_start]['bid_close']
+        
+        # Calculate spread at entry
+        spread_at_entry = entry_price_ask - entry_price_bid
+        
+        # CRITICAL FIX: TP/SL levels must account for spread
+        # We enter at ask, but check barriers with bid
+        # So tp_level should be: entry_ask + tp_distance
+        # But bid needs to reach this level, which requires movement of tp_distance + spread
+        # Solution: Calculate levels from bid_close, but keep entry_price_ask for PnL
+        tp_level = entry_price_bid + tp_distance
+        sl_level = entry_price_bid - sl_distance
         
         # Scan forward up to effective_horizon_bars
         end_bar_idx = min(bar_idx_start + effective_horizon_bars, len(prices) - 1)
@@ -113,17 +125,19 @@ def compute_triple_barrier(
             skipped_count += 1
             continue
         
-        # Check barriers
-        label, barrier_hit, exit_bar_idx = _check_barriers(
-            entry_price=entry_price,
-            tp_distance=tp_distance,
-            sl_distance=sl_distance,
+        # Check barriers with corrected levels
+        label, barrier_hit, exit_bar_idx = _check_barriers_fixed(
+            tp_level=tp_level,
+            sl_level=sl_level,
             future_prices=future_prices,
             start_bar_idx=bar_idx_start
         )
         
         # Exit price = bid at exit time
         exit_price = prices.iloc[exit_bar_idx]['bid_close']
+        
+        # Entry price for PnL calculation (we entered at ask)
+        entry_price = entry_price_ask
         exit_timestamp = prices.index[exit_bar_idx]  # timestamp is in index now
         
         # Compute PnL
@@ -157,7 +171,7 @@ def _check_barriers(
     future_prices: pd.DataFrame,
     start_bar_idx: int
 ) -> Tuple[int, str, int]:
-    """Check which barrier is hit first.
+    """Check which barrier is hit first (legacy function, kept for compatibility).
     
     Args:
         entry_price: Entry price (ask at t0)
@@ -175,6 +189,44 @@ def _check_barriers(
     tp_level = entry_price + tp_distance
     sl_level = entry_price - sl_distance
     
+    # For each bar, check if TP or SL hit using bid high/low
+    for i, (idx, row) in enumerate(future_prices.iterrows()):
+        # Calculate absolute bar position
+        bar_position = start_bar_idx + 1 + i
+        
+        # TP check: bid_high >= tp_level
+        if row['bid_high'] >= tp_level:
+            return 1, 'tp', bar_position
+        
+        # SL check: bid_low <= sl_level
+        if row['bid_low'] <= sl_level:
+            return -1, 'sl', bar_position
+    
+    # Time barrier hit (neither TP nor SL)
+    last_bar_position = start_bar_idx + len(future_prices)
+    return 0, 'time', last_bar_position
+
+
+def _check_barriers_fixed(
+    tp_level: float,
+    sl_level: float,
+    future_prices: pd.DataFrame,
+    start_bar_idx: int
+) -> Tuple[int, str, int]:
+    """Check which barrier is hit first (fixed version accounting for spread).
+    
+    Args:
+        tp_level: Take profit level (already calculated from bid_close + tp_distance)
+        sl_level: Stop loss level (already calculated from bid_close - sl_distance)
+        future_prices: DataFrame slice of future bars
+        start_bar_idx: Starting bar index
+        
+    Returns:
+        Tuple of (label, barrier_hit, exit_bar_idx)
+            label: 1 (TP), -1 (SL), 0 (time)
+            barrier_hit: 'tp' | 'sl' | 'time'
+            exit_bar_idx: index in original prices DataFrame
+    """
     # For each bar, check if TP or SL hit using bid high/low
     for i, (idx, row) in enumerate(future_prices.iterrows()):
         # Calculate absolute bar position
