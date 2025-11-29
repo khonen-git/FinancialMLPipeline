@@ -1,0 +1,93 @@
+# @package _global_
+# Configuration with TP/SL based on MFE/MAE analysis
+# MFE/MAE median = 5-6 ticks, so TP/SL = 10 ticks (2x median)
+
+experiment:
+  name: "eurusd_2023_bars100_tp10"
+  description: "100-tick bars, 10-tick TP/SL (based on MFE/MAE), binary classification"
+  tags: ["eurusd", "2023", "bars100", "tp10", "mfe_mae_based"]
+
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.00001
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
+session:
+  session_start: "00:00"
+  session_end: "21:55"
+  friday_end: "20:00"
+  weekend_trading: false
+
+data:
+  dukascopy:
+    raw_dir: "data/raw"
+    filename: "EURUSD_2023.csv"
+    format: "csv"
+  bars:
+    type: "tick"
+    threshold: 100
+
+labeling:
+  triple_barrier:
+    tp_ticks: 10  # Based on MFE median × 2
+    sl_ticks: 10  # Based on MAE median × 2
+    max_horizon_bars: 32
+    min_horizon_bars: 32
+    distance_mode: "ticks"
+    drop_time_barrier: true
+
+features:
+  returns_lookbacks: [1, 5, 10, 20]
+  volatility_lookbacks: [10, 20, 50]
+  range_lookbacks: [10, 20]
+  spread_stats_lookbacks: [5, 10]
+  order_flow_lookbacks: [5, 10, 20]
+  ma_periods: [5, 10, 20, 50]
+  mfe_mae:
+    enabled: true
+    horizon_bars: 32
+    quantile: 0.5
+
+models:
+  hmm:
+    macro:
+      enabled: false
+    micro:
+      enabled: false
+  random_forest:
+    params:
+      n_estimators: 200
+      max_depth: 10
+      min_samples_leaf: 20
+      n_jobs: -1
+      class_weight: "balanced"
+    scoring: "precision"
+
+validation:
+  n_splits: 3
+  train_duration: 6000
+  test_duration: 2000
+  purge_window: 50
+  embargo_duration: 20
+
+risk:
+  mc_simulations: 1000
+  starting_capital: 10000.0
+  max_daily_loss: 0.03
+  max_total_drawdown: 0.2
+
+reporting:
+  enabled: true
+  output_dir: "outputs/reports"
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "eurusd_2023_bars100_tp10"
+
+runtime:
+  log_level: "INFO"
+  gpu_enabled: false
+
