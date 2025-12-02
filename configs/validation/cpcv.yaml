@@ -1,0 +1,23 @@
+# Combinatorial Purged Cross-Validation (CPCV) Configuration
+#
+# Implements López de Prado's Combinatorial Purged Cross-Validation:
+# - Partitions data into N temporal groups
+# - Generates folds by selecting k groups as test (combinatorial)
+# - Allows training on data before and after test (unlike walk-forward)
+# - Applies purging to remove overlapping labels
+# - Applies embargo after each test block
+
+validation:
+  cv_type: "cpcv"  # Use CombinatorialPurgedCV
+  
+  # CPCV parameters
+  n_groups: 10  # Number of temporal groups (blocks) to partition the series
+  n_test_groups: 2  # Number of groups used as test for each fold (k)
+  
+  # Embargo
+  embargo_duration: 20  # Size of embargo (in bars) after each test block
+  
+  # Optional: Limit number of combinations if C(n_groups, n_test_groups) is too large
+  # If None, uses all combinations
+  max_combinations: null  # e.g., 45 to limit to 45 folds max
+

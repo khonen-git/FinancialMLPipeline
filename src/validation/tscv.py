@@ -1,127 +1,97 @@
-"""Time-series cross-validation with purging and embargo.
+"""Simple time-series cross-validation with gap.
 
-Implements Lopez de Prado's walk-forward CV with:
-- Purging: Remove samples too close to test set
-- Embargo: Add gap after test set to avoid look-ahead
+Wrapper around sklearn.model_selection.TimeSeriesSplit with optional gap.
+This is a baseline CV method for benchmarking against CPCV (Combinatorial Purged CV).
 """
 
 import logging
 import pandas as pd
 import numpy as np
-from typing import Iterator, Tuple
+from typing import Iterator, Tuple, Optional
+from sklearn.model_selection import TimeSeriesSplit as SklearnTimeSeriesSplit
 
 logger = logging.getLogger(__name__)
 
 
 class TimeSeriesCV:
-    """Time-series cross-validation splitter with purging and embargo."""
+    """Simple time-series cross-validation splitter with optional gap.
+    
+    This is a wrapper around sklearn's TimeSeriesSplit with an optional gap parameter.
+    It serves as a baseline for benchmarking against more sophisticated methods
+    like Combinatorial Purged Cross-Validation (CPCV).
+    
+    Unlike CPCV, this method:
+    - Does not perform purging based on label intervals
+    - Does not apply embargo
+    - Simply splits data temporally with an optional gap between train and test
+    """
     
     def __init__(
         self,
         n_splits: int,
-        train_duration: int,
-        test_duration: int,
-        purge_window: int = 0,
-        embargo_duration: int = 0
+        test_size: Optional[int] = None,
+        gap: int = 0
     ):
         """Initialize CV splitter.
         
         Args:
             n_splits: Number of CV folds
-            train_duration: Number of bars for training
-            test_duration: Number of bars for testing
-            purge_window: Number of bars to purge before test set
-            embargo_duration: Number of bars to embargo after test set
+            test_size: Number of samples in each test set. If None, uses default
+                sklearn behavior (test_size = n_samples // (n_splits + 1))
+            gap: Number of samples to skip between train and test sets
         """
         self.n_splits = n_splits
-        self.train_duration = train_duration
-        self.test_duration = test_duration
-        self.purge_window = purge_window
-        self.embargo_duration = embargo_duration
+        self.test_size = test_size
+        self.gap = gap
+        
+        # Use sklearn's TimeSeriesSplit internally
+        self._sklearn_cv = SklearnTimeSeriesSplit(
+            n_splits=n_splits,
+            test_size=test_size,
+            gap=gap
+        )
     
     def split(
         self,
         X: pd.DataFrame,
-        label_indices: pd.DataFrame = None
+        y: Optional[pd.Series] = None,
+        label_indices: Optional[pd.DataFrame] = None,
+        groups: Optional[np.ndarray] = None
     ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         """Generate train/test splits.
         
         Args:
-            X: Feature DataFrame (with datetime index)
-            label_indices: Optional DataFrame with 'start_idx' and 'end_idx' for purging
+            X: Feature DataFrame (with datetime index, ordered temporally)
+            y: Optional target Series (for sklearn compatibility)
+            label_indices: Optional DataFrame (ignored, kept for API compatibility)
+            groups: Optional pre-assigned groups (for sklearn compatibility, ignored)
             
         Yields:
-            Tuple of (train_indices, test_indices)
+            Tuple of (train_indices, test_indices) as integer arrays usable with X.iloc[...]
         """
-        n_samples = len(X)
+        # Convert to numpy array for sklearn compatibility
+        # sklearn expects array-like, not DataFrame
+        X_array = np.arange(len(X))
         
-        for fold in range(self.n_splits):
-            # Compute test window
-            test_start = self.train_duration + fold * self.test_duration
-            test_end = test_start + self.test_duration
-            
-            if test_end > n_samples:
-                logger.warning(f"Fold {fold}: test_end exceeds data length, stopping")
-                break
-            
-            # Test indices
-            test_idx = np.arange(test_start, test_end)
-            
-            # Train indices
-            train_start = max(0, test_start - self.train_duration)
-            train_end = test_start
-            
-            # Apply purging if needed
-            if self.purge_window > 0:
-                train_end = test_start - self.purge_window
-            
-            train_idx = np.arange(train_start, train_end)
-            
-            # Advanced purging based on label overlaps
-            if label_indices is not None:
-                train_idx = self._purge_overlapping_labels(
-                    train_idx, test_idx, label_indices
-                )
-            
+        # Use sklearn's splitter
+        for train_idx, test_idx in self._sklearn_cv.split(X_array, y, groups):
             logger.info(
-                f"Fold {fold}: train={len(train_idx)} samples "
-                f"[{train_start}:{train_end}], test={len(test_idx)} samples "
-                f"[{test_start}:{test_end}]"
+                f"Fold: train={len(train_idx)} samples "
+                f"[{train_idx[0]}:{train_idx[-1]+1}], "
+                f"test={len(test_idx)} samples [{test_idx[0]}:{test_idx[-1]+1}], "
+                f"gap={self.gap}"
             )
-            
             yield train_idx, test_idx
     
-    def _purge_overlapping_labels(
-        self,
-        train_idx: np.ndarray,
-        test_idx: np.ndarray,
-        label_indices: pd.DataFrame
-    ) -> np.ndarray:
-        """Purge training samples whose labels overlap with test set.
+    def get_n_splits(self, X=None, y=None, groups=None) -> int:
+        """Return the number of splits.
         
         Args:
-            train_idx: Training indices (integer positions)
-            test_idx: Test indices (integer positions)
-            label_indices: DataFrame with 'start_idx' and 'end_idx'
+            X: Optional data (for sklearn compatibility)
+            y: Optional target (for sklearn compatibility)
+            groups: Optional groups (for sklearn compatibility)
             
         Returns:
-            Purged training indices
+            Number of splits
         """
-        test_start = test_idx[0]
-        test_end = test_idx[-1]
-        
-        # Find training samples whose labels extend into test period
-        # Use iloc since train_idx contains integer positions, not index labels
-        overlapping_mask = (
-            (label_indices.iloc[train_idx]['end_idx'] >= test_start) &
-            (label_indices.iloc[train_idx]['start_idx'] <= test_end)
-        )
-        
-        purged_train_idx = train_idx[~overlapping_mask.values]
-        
-        n_purged = len(train_idx) - len(purged_train_idx)
-        if n_purged > 0:
-            logger.info(f"Purged {n_purged} overlapping training samples")
-        
-        return purged_train_idx
-
+        return self.n_splits

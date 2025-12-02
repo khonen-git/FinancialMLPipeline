@@ -8,6 +8,7 @@ defaults:
   - labeling: triple_barrier
   - features: base_features
   - models: rf_cpu
+  - validation: tscv
   - risk: basic
   - backtest: base_bt
   - reporting: report

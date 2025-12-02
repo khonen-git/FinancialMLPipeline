@@ -1,0 +1,18 @@
+# Simple Time-Series Cross-Validation Configuration
+#
+# Baseline CV method: wrapper around sklearn.model_selection.TimeSeriesSplit with optional gap.
+# This serves as a benchmark to compare against CPCV (Combinatorial Purged CV).
+#
+# Unlike CPCV, this method:
+# - Does not perform purging based on label intervals
+# - Does not apply embargo
+# - Simply splits data temporally with an optional gap between train and test
+
+validation:
+  cv_type: "time_series"  # Use TimeSeriesCV (baseline sklearn-based)
+  
+  # Parameters
+  n_splits: 3  # Number of CV folds
+  test_size: 2000  # Number of samples in each test set (optional, if None uses sklearn default)
+  gap: 0  # Number of samples to skip between train and test sets
+

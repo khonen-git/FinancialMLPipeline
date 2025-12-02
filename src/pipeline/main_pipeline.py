@@ -33,6 +33,7 @@ from src.models.hmm_macro import MacroHMM
 from src.models.hmm_micro import MicroHMM
 from src.models.rf_cpu import RandomForestCPU
 from src.validation.tscv import TimeSeriesCV
+from src.validation.cpcv import CombinatorialPurgedCV
 from src.backtest.backtrader_strategy import SessionAwareStrategy
 from src.backtest.data_feed import create_backtrader_feed
 from src.risk.monte_carlo import run_monte_carlo_simulation, analyze_prop_firm_constraints
@@ -246,15 +247,9 @@ def run_pipeline(cfg: DictConfig):
         
         logger.info(f"Final dataset: {len(X)} samples, {len(X.columns)} features")
         
-        # Step 9: Time-series CV with purging and embargo
-        logger.info("Step 9: Time-series cross-validation with purging and embargo")
-        tscv = TimeSeriesCV(
-            n_splits=cfg.validation.n_splits,
-            train_duration=cfg.validation.train_duration,
-            test_duration=cfg.validation.test_duration,
-            purge_window=cfg.validation.purge_window,
-            embargo_duration=cfg.validation.embargo_duration
-        )
+        # Step 9: Cross-validation setup
+        cv_type = cfg.validation.get('cv_type', 'time_series')
+        logger.info(f"Step 9: Setting up {cv_type} cross-validation")
         
         # Prepare label_indices for advanced purging (avoid label overlap)
         label_indices = pd.DataFrame({
@@ -262,16 +257,40 @@ def run_pipeline(cfg: DictConfig):
             'end_idx': labels_df.set_index('bar_timestamp').loc[dataset.index, 'bar_index_end'].values
         }, index=dataset.index)
         
-        logger.info(f"Purge window: {cfg.validation.purge_window} bars, Embargo: {cfg.validation.embargo_duration} bars")
+        # Initialize CV splitter based on type
+        if cv_type == 'cpcv':
+            # Combinatorial Purged Cross-Validation
+            cv = CombinatorialPurgedCV(
+                n_groups=cfg.validation.get('n_groups', 10),
+                n_test_groups=cfg.validation.get('n_test_groups', 2),
+                embargo_size=cfg.validation.get('embargo_duration', 0),
+                max_combinations=cfg.validation.get('max_combinations', None),
+                random_state=cfg.experiment.get('seed', None)
+            )
+            logger.info(
+                f"CPCV: {cv.n_groups} groups, {cv.n_test_groups} test groups per fold, "
+                f"embargo={cv.embargo_size} bars"
+            )
+        else:
+            # Simple time-series CV (baseline, sklearn-based)
+            cv = TimeSeriesCV(
+                n_splits=cfg.validation.n_splits,
+                test_size=cfg.validation.get('test_duration', None),
+                gap=cfg.validation.get('gap', 0)
+            )
+            logger.info(
+                f"TimeSeriesCV (baseline): {cv.n_splits} folds, "
+                f"test_size={cv.test_size}, gap={cv.gap} bars"
+            )
         
-        # Step 10: Train model with walk-forward validation
-        logger.info("Step 10: Training Random Forest with purged cross-validation")
+        # Step 10: Train model with cross-validation
+        logger.info("Step 10: Training Random Forest with cross-validation")
         accuracy = 0.0  # Initialize
         accuracies = []
         
         if len(X) > 0:
             # Pass label_indices to enable advanced purging
-            for fold, (train_idx, test_idx) in enumerate(tscv.split(X, label_indices)):
+            for fold, (train_idx, test_idx) in enumerate(cv.split(X, label_indices=label_indices)):
                 logger.info(f"Fold {fold}: train={len(train_idx)}, test={len(test_idx)}")
                 
                 X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]

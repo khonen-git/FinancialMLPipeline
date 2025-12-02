@@ -403,28 +403,55 @@ hmm:
 
 ---
 
-## 11. Validation & Walk-Forward Configuration
+## 11. Validation & Cross-Validation Configuration
 
-**File**: `configs/experiment/walkforward.yaml` or `configs/risk/basic.yaml`
+**Files**: `configs/validation/tscv.yaml` (default) or `configs/validation/cpcv.yaml`
+
+Two types of cross-validation are supported:
+
+### 11.1 Time-Series Cross-Validation (Baseline)
+
+**File**: `configs/validation/tscv.yaml`
 
 ```yaml
 validation:
-  cv_type: "time_series"
-  n_splits: 5
-  embargo_pct: 0.01      # fraction of dataset to embargo between train/test
-
-walk_forward:
-  enabled: true
-  method: "rolling"      # rolling | expanding
-  n_splits: 5
-  min_train_period_bars: 2000
-  test_period_bars: 500
+  cv_type: "time_series"  # Use TimeSeriesCV (baseline sklearn-based)
+  n_splits: 3  # Number of CV folds
+  test_size: 2000  # Number of samples in each test set (optional)
+  gap: 0  # Number of samples to skip between train and test sets
 ```
 
 **Notes**:
+- Baseline CV method: wrapper around `sklearn.model_selection.TimeSeriesSplit` with optional gap
+- Serves as a benchmark to compare against CPCV (Combinatorial Purged CV)
+- Unlike CPCV, this method:
+  - Does not perform purging based on label intervals
+  - Does not apply embargo
+  - Simply splits data temporally with an optional gap between train and test
 
-- `cv_type` defines the splitting logic (always time-series here).
-- `embargo_pct` connects to purging/embargo logic.
+### 11.2 Combinatorial Purged Cross-Validation (CPCV)
+
+**File**: `configs/validation/cpcv.yaml`
+
+```yaml
+validation:
+  cv_type: "cpcv"  # Use CombinatorialPurgedCV
+  n_groups: 10  # Number of temporal groups (blocks)
+  n_test_groups: 2  # Number of groups used as test per fold
+  embargo_duration: 20  # Size of embargo (in bars) after each test block
+  max_combinations: null  # Optional: limit number of folds if C(n_groups, n_test_groups) is too large
+```
+
+**Notes**:
+- Partitions data into N temporal groups
+- Generates folds by selecting k groups as test (combinatorial)
+- Allows training on data before and after test (unlike walk-forward)
+- Creates richer distribution of out-of-sample performance estimates
+- If `max_combinations` is None, uses all C(n_groups, n_test_groups) combinations
+
+**Usage in experiments**:
+- Override in experiment config: `- override /validation: cpcv`
+- Or specify directly in experiment YAML (will override defaults)
 
 ---
 
