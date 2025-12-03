@@ -18,6 +18,7 @@ from typing import Optional
 import pandas as pd
 
 from .session_calendar import SessionCalendar
+from ..utils.helpers import convert_ticks_to_price
 
 logger = logging.getLogger(__name__)
 
@@ -190,13 +191,19 @@ class TripleBarrierLabeler:
 
         Args:
             config: Configuration dictionary with keys:
-                - tp_ticks: Take profit distance in ticks
-                - sl_ticks: Stop loss distance in ticks
+                - tp_ticks: Take profit distance in ticks (for 'ticks' mode)
+                - sl_ticks: Stop loss distance in ticks (for 'ticks' mode)
+                - tp_quantile: Take profit quantile (for 'mfe_mae' mode)
+                - sl_quantile: Stop loss quantile (for 'mfe_mae' mode)
                 - max_horizon_bars: Maximum horizon in bars
                 - min_horizon_bars: Minimum horizon (no-trade zone threshold)
-                - distance_mode: 'ticks' or 'absolute'
+                - distance_mode: 'ticks' or 'mfe_mae'
                 - tick_size: Tick size for 'ticks' mode (default 0.0001)
             session_calendar: SessionCalendar instance for session-aware logic
+            
+        Note:
+            For 'ticks' mode, uses convert_ticks_to_price() to convert ticks to price.
+            For 'mfe_mae' mode, TP/SL are computed from MFE/MAE quantiles in the pipeline.
         """
         self.config = config
         self.calendar = session_calendar
@@ -209,12 +216,21 @@ class TripleBarrierLabeler:
         self.tick_size = config.get('tick_size', 0.0001)
         
         # Pre-computed price distances
+        # Only use convert_ticks_to_price for 'ticks' mode
         if self.distance_mode == 'ticks':
-            self.tp_distance = self.tp_ticks * self.tick_size
-            self.sl_distance = self.sl_ticks * self.tick_size
+            self.tp_distance = convert_ticks_to_price(self.tp_ticks, self.tick_size)
+            self.sl_distance = convert_ticks_to_price(self.sl_ticks, self.tick_size)
+        elif self.distance_mode == 'mfe_mae':
+            # MFE/MAE mode: TP/SL will be set dynamically from MFE/MAE quantiles
+            # Store the values that will be computed in the pipeline
+            # For now, use defaults (will be overridden)
+            self.tp_distance = convert_ticks_to_price(self.tp_ticks, self.tick_size)
+            self.sl_distance = convert_ticks_to_price(self.sl_ticks, self.tick_size)
         else:
-            self.tp_distance = self.tp_ticks  # Assume absolute
-            self.sl_distance = self.sl_ticks
+            raise ValueError(
+                f"Invalid distance_mode: {self.distance_mode}. "
+                f"Must be one of: 'ticks', 'mfe_mae'"
+            )
     
     def label_dataset(
         self,

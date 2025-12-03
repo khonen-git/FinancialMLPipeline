@@ -123,12 +123,73 @@ def run_pipeline(cfg: DictConfig):
         
         # Add MFE/MAE features (Maximum Favorable/Adverse Excursion)
         from src.features.mfe_mae import compute_mfe_mae
-        if cfg.features.get('mfe_mae', {}).get('enabled', False):
-            horizon = cfg.features.mfe_mae.get('horizon_bars', 32)
-            quantile = cfg.features.mfe_mae.get('quantile', 0.5)
-            mfe_mae_features = compute_mfe_mae(bars, horizon_bars=horizon, quantile=quantile)
+        distance_mode = cfg.labeling.triple_barrier.get('distance_mode', 'ticks')
+        
+        # Check if we need to compute MFE/MAE for TP/SL
+        if distance_mode == 'mfe_mae':
+            logger.info("Using MFE/MAE mode: computing TP/SL from quantiles")
+            
+            # Get MFE/MAE parameters from labeling config
+            mfe_mae_config = cfg.labeling.triple_barrier.get('mfe_mae', {})
+            horizon_bars = mfe_mae_config.get('horizon_bars', 8)  # 8 bars of 100 ticks = 800 ticks
+            tp_quantile = mfe_mae_config.get('tp_quantile', 0.5)
+            sl_quantile = mfe_mae_config.get('sl_quantile', 0.5)
+            tick_size = cfg.assets.get('tick_size', 0.00001)
+            
+            logger.info(
+                f"MFE/MAE config: horizon={horizon_bars} bars, "
+                f"TP quantile={tp_quantile}, SL quantile={sl_quantile}"
+            )
+            
+            # Compute MFE/MAE features once
+            mfe_mae_features = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=tp_quantile)
+            
+            # Extract MFE and MAE quantiles
+            valid_mfe = mfe_mae_features['mfe'].dropna()
+            valid_mae = mfe_mae_features['mae'].dropna()
+            
+            if len(valid_mfe) == 0 or len(valid_mae) == 0:
+                logger.warning("Insufficient data for MFE/MAE analysis, using defaults")
+                tp_ticks = 50
+                sl_ticks = 50
+                mfe_quantile_val = None
+                mae_quantile_val = None
+            else:
+                # MFE quantile → TP
+                mfe_quantile_val = valid_mfe.quantile(tp_quantile)
+                tp_ticks = int(mfe_quantile_val / tick_size)
+                tp_ticks = max(tp_ticks, 10)  # Minimum
+                
+                # MAE quantile → SL
+                mae_quantile_val = valid_mae.quantile(sl_quantile)
+                sl_ticks = int(abs(mae_quantile_val) / tick_size)  # MAE is negative, take absolute
+                sl_ticks = max(sl_ticks, 10)  # Minimum
+            
+            # Override TP/SL in config with MFE/MAE suggestions
+            cfg.labeling.triple_barrier.tp_ticks = tp_ticks
+            cfg.labeling.triple_barrier.sl_ticks = sl_ticks
+            
+            logger.info(
+                f"MFE/MAE suggested TP: {tp_ticks} ticks "
+                f"({tp_ticks/10:.1f} pips) from MFE q{tp_quantile}, "
+                f"SL: {sl_ticks} ticks ({sl_ticks/10:.1f} pips) from MAE q{sl_quantile}"
+            )
+            mlflow.log_params({
+                'tp_ticks_mfe_mae': tp_ticks,
+                'sl_ticks_mfe_mae': sl_ticks,
+                'mfe_quantile': mfe_quantile_val,
+                'mae_quantile': mae_quantile_val,
+                'mfe_mae_horizon_bars': horizon_bars
+            })
         else:
-            mfe_mae_features = pd.DataFrame(index=bars.index)
+            # Regular features mode: compute MFE/MAE if enabled
+            mfe_mae_enabled = cfg.features.get('mfe_mae', {}).get('enabled', False)
+            if mfe_mae_enabled:
+                horizon = cfg.features.mfe_mae.get('horizon_bars', 32)
+                quantile = cfg.features.mfe_mae.get('quantile', 0.5)
+                mfe_mae_features = compute_mfe_mae(bars, horizon_bars=horizon, quantile=quantile)
+            else:
+                mfe_mae_features = pd.DataFrame(index=bars.index)
         
         all_features = pd.concat([
             price_features, 

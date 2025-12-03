@@ -270,20 +270,19 @@ labeling:
   type: "triple_barrier"
 
   # distance specification: choose exactly one mode
-  distance_mode: "ticks"          # ticks | volatility | absolute
+  distance_mode: "mfe_mae"          # ticks | mfe_mae
 
   # if distance_mode == "ticks"
   tp_ticks: 100
   sl_ticks: 100
-
-  # if distance_mode == "volatility"
-  vol_lookback_bars: 50
-  tp_vol_mult: 2.0
-  sl_vol_mult: 2.0
-
-  # if distance_mode == "absolute"
-  tp_absolute: 0.0010
-  sl_absolute: 0.0010
+  
+  # if distance_mode == "mfe_mae"
+  # TP/SL are computed from MFE/MAE quantiles
+  # MFE quantile → TP, MAE quantile → SL
+  mfe_mae:
+    horizon_bars: 8  # Horizon in bars (e.g., 8 bars of 100 ticks = 800 ticks)
+    tp_quantile: 0.5  # Quantile for MFE (take profit)
+    sl_quantile: 0.5  # Quantile for MAE (stop loss)
 
   max_horizon_bars: 50          # overridden by session-aware logic
   min_horizon_bars: 10
@@ -296,7 +295,17 @@ labeling:
 
 **Notes**:
 
-- Internally, TP/SL distances are always translated into price space, possibly using `tick_size`.
+- **Distance modes**:
+  - `ticks`: TP/SL specified in ticks, converted to price using `convert_ticks_to_price()` and `tick_size`
+  - `mfe_mae`: TP/SL computed automatically from MFE/MAE quantiles
+    - Uses MFE quantile for TP (Maximum Favorable Excursion)
+    - Uses MAE quantile for SL (Maximum Adverse Excursion)
+    - Requires `mfe_mae` configuration block with `horizon_bars`, `tp_quantile`, and `sl_quantile`
+    - The computed TP/SL values override `tp_ticks` and `sl_ticks` in the config
+  
+- Internally, TP/SL distances are always translated into price space.
+- For `distance_mode="ticks"`, conversion uses `convert_ticks_to_price()` function.
+- For `distance_mode="mfe_mae"`, TP/SL are computed from price excursions and converted to ticks.
 - Session-aware logic uses `max_horizon_bars` and `min_horizon_bars` with the session config.
 
 ---
