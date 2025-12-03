@@ -186,24 +186,33 @@ class TripleBarrierLabeler:
     - calls ``compute_triple_barrier``.
     """
     
-    def __init__(self, config: dict, session_calendar: SessionCalendar):
+    def __init__(
+        self, 
+        config: dict, 
+        session_calendar: SessionCalendar,
+        bars: Optional[pd.DataFrame] = None,
+        assets_config: Optional[dict] = None
+    ):
         """Initialize the labeler from a Hydra-style configuration.
 
         Args:
             config: Configuration dictionary with keys:
                 - tp_ticks: Take profit distance in ticks (for 'ticks' mode)
                 - sl_ticks: Stop loss distance in ticks (for 'ticks' mode)
-                - tp_quantile: Take profit quantile (for 'mfe_mae' mode)
-                - sl_quantile: Stop loss quantile (for 'mfe_mae' mode)
                 - max_horizon_bars: Maximum horizon in bars
                 - min_horizon_bars: Minimum horizon (no-trade zone threshold)
                 - distance_mode: 'ticks' or 'mfe_mae'
-                - tick_size: Tick size for 'ticks' mode (default 0.0001)
+                - mfe_mae: Configuration block for MFE/MAE mode (required if distance_mode='mfe_mae')
+                  - horizon_bars: Horizon for MFE/MAE computation
+                  - tp_quantile: Quantile for TP (e.g., 0.5 for median)
+                  - sl_quantile: Quantile for SL (e.g., 0.5 for median)
             session_calendar: SessionCalendar instance for session-aware logic
+            bars: DataFrame with OHLC data (required if distance_mode='mfe_mae')
+            assets_config: Assets configuration with 'tick_size' (required if distance_mode='mfe_mae')
             
         Note:
             For 'ticks' mode, uses convert_ticks_to_price() to convert ticks to price.
-            For 'mfe_mae' mode, TP/SL are computed from MFE/MAE quantiles in the pipeline.
+            For 'mfe_mae' mode, TP/SL are computed from MFE/MAE quantiles using the provided bars.
         """
         self.config = config
         self.calendar = session_calendar
@@ -238,19 +247,72 @@ class TripleBarrierLabeler:
             self.tp_distance = convert_ticks_to_price(self.tp_ticks, self.tick_size)
             self.sl_distance = convert_ticks_to_price(self.sl_ticks, self.tick_size)
         elif self.distance_mode == 'mfe_mae':
-            # MFE/MAE mode: TP/SL will be set dynamically from MFE/MAE quantiles
+            # MFE/MAE mode: TP/SL computed from MFE/MAE quantiles
             # Require mfe_mae config block
             if 'mfe_mae' not in config:
                 raise ValueError(
                     "Missing required config: mfe_mae (required when distance_mode='mfe_mae')"
                 )
-            # TP/SL will be set by pipeline, use temporary values
-            # tick_size will be provided by assets config
-            self.tp_ticks = config.get('tp_ticks', 100)  # Temporary, will be overridden
-            self.sl_ticks = config.get('sl_ticks', 100)  # Temporary, will be overridden
-            self.tick_size = config.get('tick_size', 0.00001)  # Temporary, will be overridden
+            mfe_mae_config = config['mfe_mae']
+            
+            # Require MFE/MAE parameters
+            if 'horizon_bars' not in mfe_mae_config:
+                raise ValueError("Missing required config: mfe_mae.horizon_bars")
+            if 'tp_quantile' not in mfe_mae_config:
+                raise ValueError("Missing required config: mfe_mae.tp_quantile")
+            if 'sl_quantile' not in mfe_mae_config:
+                raise ValueError("Missing required config: mfe_mae.sl_quantile")
+            
+            # Require bars and assets_config for MFE/MAE computation
+            if bars is None:
+                raise ValueError("bars parameter is required when distance_mode='mfe_mae'")
+            if assets_config is None or 'tick_size' not in assets_config:
+                raise ValueError("assets_config with 'tick_size' is required when distance_mode='mfe_mae'")
+            
+            tick_size = assets_config['tick_size']
+            horizon_bars = mfe_mae_config['horizon_bars']
+            tp_quantile = mfe_mae_config['tp_quantile']
+            sl_quantile = mfe_mae_config['sl_quantile']
+            
+            logger.info(
+                f"MFE/MAE mode: computing TP/SL from quantiles. "
+                f"Horizon={horizon_bars} bars, TP quantile={tp_quantile}, SL quantile={sl_quantile}"
+            )
+            
+            # Compute MFE/MAE for quantile analysis (NOT as features - uses future data)
+            from .mfe_mae import compute_mfe_mae
+            mfe_mae_data = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=tp_quantile)
+            
+            # Extract MFE and MAE quantiles for TP/SL suggestion
+            valid_mfe = mfe_mae_data['mfe'].dropna()
+            valid_mae = mfe_mae_data['mae'].dropna()
+            
+            if len(valid_mfe) == 0 or len(valid_mae) == 0:
+                logger.warning("Insufficient data for MFE/MAE analysis, using defaults")
+                self.tp_ticks = 50
+                self.sl_ticks = 50
+                self.mfe_quantile_val = None
+                self.mae_quantile_val = None
+            else:
+                # MFE quantile → TP
+                self.mfe_quantile_val = valid_mfe.quantile(tp_quantile)
+                self.tp_ticks = int(self.mfe_quantile_val / tick_size)
+                self.tp_ticks = max(self.tp_ticks, 10)  # Minimum
+                
+                # MAE quantile → SL
+                self.mae_quantile_val = valid_mae.quantile(sl_quantile)
+                self.sl_ticks = int(abs(self.mae_quantile_val) / tick_size)  # MAE is negative, take absolute
+                self.sl_ticks = max(self.sl_ticks, 10)  # Minimum
+            
+            self.tick_size = tick_size
             self.tp_distance = convert_ticks_to_price(self.tp_ticks, self.tick_size)
             self.sl_distance = convert_ticks_to_price(self.sl_ticks, self.tick_size)
+            
+            logger.info(
+                f"MFE/MAE suggested TP: {self.tp_ticks} ticks "
+                f"({self.tp_ticks/10:.1f} pips) from MFE q{tp_quantile}, "
+                f"SL: {self.sl_ticks} ticks ({self.sl_ticks/10:.1f} pips) from MAE q{sl_quantile}"
+            )
         else:
             raise ValueError(
                 f"Invalid distance_mode: {self.distance_mode}. "

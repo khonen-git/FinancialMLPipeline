@@ -127,101 +127,6 @@ def run_pipeline(cfg: DictConfig):
         ma_slope_features = create_ma_slope_features(bars, periods=[5, 10, 20, 50])
         ma_cross_features = create_ma_cross_features(bars)
         
-        # MFE/MAE analysis for TP/SL parameter selection (Maximum Favorable/Adverse Excursion)
-        from src.labeling.mfe_mae import compute_mfe_mae
-        
-        # Require distance_mode
-        if 'distance_mode' not in cfg.labeling.triple_barrier:
-            raise ValueError("Missing required config: labeling.triple_barrier.distance_mode")
-        distance_mode = cfg.labeling.triple_barrier.distance_mode
-        
-        # Check if we need to compute MFE/MAE for TP/SL
-        if distance_mode == 'mfe_mae':
-            logger.info("Using MFE/MAE mode: computing TP/SL from quantiles")
-            
-            # Require MFE/MAE config block
-            if 'mfe_mae' not in cfg.labeling.triple_barrier:
-                raise ValueError(
-                    "Missing required config: labeling.triple_barrier.mfe_mae "
-                    "(required when distance_mode='mfe_mae')"
-                )
-            mfe_mae_config = cfg.labeling.triple_barrier.mfe_mae
-            
-            # Require MFE/MAE parameters
-            if 'horizon_bars' not in mfe_mae_config:
-                raise ValueError("Missing required config: labeling.triple_barrier.mfe_mae.horizon_bars")
-            if 'tp_quantile' not in mfe_mae_config:
-                raise ValueError("Missing required config: labeling.triple_barrier.mfe_mae.tp_quantile")
-            if 'sl_quantile' not in mfe_mae_config:
-                raise ValueError("Missing required config: labeling.triple_barrier.mfe_mae.sl_quantile")
-            
-            horizon_bars = mfe_mae_config.horizon_bars
-            tp_quantile = mfe_mae_config.tp_quantile
-            sl_quantile = mfe_mae_config.sl_quantile
-            
-            # Require tick_size
-            if 'tick_size' not in cfg.assets:
-                raise ValueError("Missing required config: assets.tick_size")
-            tick_size = cfg.assets.tick_size
-            
-            logger.info(
-                f"MFE/MAE config: horizon={horizon_bars} bars, "
-                f"TP quantile={tp_quantile}, SL quantile={sl_quantile}"
-            )
-            
-            # Compute MFE/MAE for quantile analysis (NOT as features - uses future data)
-            # This is only used to suggest TP/SL parameters, not for model training
-            mfe_mae_data = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=tp_quantile)
-            
-            # Extract MFE and MAE quantiles for TP/SL suggestion
-            valid_mfe = mfe_mae_data['mfe'].dropna()
-            valid_mae = mfe_mae_data['mae'].dropna()
-            
-            if len(valid_mfe) == 0 or len(valid_mae) == 0:
-                logger.warning("Insufficient data for MFE/MAE analysis, using defaults")
-                tp_ticks = 50
-                sl_ticks = 50
-                mfe_quantile_val = None
-                mae_quantile_val = None
-            else:
-                # MFE quantile → TP
-                mfe_quantile_val = valid_mfe.quantile(tp_quantile)
-                tp_ticks = int(mfe_quantile_val / tick_size)
-                tp_ticks = max(tp_ticks, 10)  # Minimum
-                
-                # MAE quantile → SL
-                mae_quantile_val = valid_mae.quantile(sl_quantile)
-                sl_ticks = int(abs(mae_quantile_val) / tick_size)  # MAE is negative, take absolute
-                sl_ticks = max(sl_ticks, 10)  # Minimum
-            
-            # Override TP/SL in config with MFE/MAE suggestions
-            cfg.labeling.triple_barrier.tp_ticks = tp_ticks
-            cfg.labeling.triple_barrier.sl_ticks = sl_ticks
-            
-            logger.info(
-                f"MFE/MAE suggested TP: {tp_ticks} ticks "
-                f"({tp_ticks/10:.1f} pips) from MFE q{tp_quantile}, "
-                f"SL: {sl_ticks} ticks ({sl_ticks/10:.1f} pips) from MAE q{sl_quantile}"
-            )
-            mlflow.log_params({
-                'tp_ticks_mfe_mae': tp_ticks,
-                'sl_ticks_mfe_mae': sl_ticks,
-                'mfe_quantile': mfe_quantile_val,
-                'mae_quantile': mae_quantile_val,
-                'mfe_mae_horizon_bars': horizon_bars
-            })
-        else:
-            # MFE/MAE should NOT be used as features (data leakage - uses future data)
-            # It should only be used for TP/SL parameter selection
-            # Check if someone tried to enable it as features and warn them
-            mfe_mae_enabled = cfg.features.get('mfe_mae', {}).get('enabled', False)
-            if mfe_mae_enabled:
-                logger.warning(
-                    "⚠️ MFE/MAE features are disabled to prevent data leakage. "
-                    "MFE/MAE uses future data and should only be used for TP/SL parameter selection, "
-                    "not as model features. Use distance_mode='mfe_mae' in labeling.triple_barrier instead."
-                )
-        
         all_features = pd.concat([
             price_features, 
             micro_features, 
@@ -230,6 +135,17 @@ def run_pipeline(cfg: DictConfig):
             ma_cross_features
         ], axis=1)
         logger.info(f"Created {len(all_features.columns)} total features")
+        
+        # MFE/MAE should NOT be used as features (data leakage - uses future data)
+        # It should only be used for TP/SL parameter selection
+        # Check if someone tried to enable it as features and warn them
+        mfe_mae_enabled = cfg.features.get('mfe_mae', {}).get('enabled', False)
+        if mfe_mae_enabled:
+            logger.warning(
+                "⚠️ MFE/MAE features are disabled to prevent data leakage. "
+                "MFE/MAE uses future data and should only be used for TP/SL parameter selection, "
+                "not as model features. Use distance_mode='mfe_mae' in labeling.triple_barrier instead."
+            )
         
         # Step 6: HMM regime detection (optional)
         logger.info("Step 6: HMM regime detection")
@@ -255,8 +171,24 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 7: Labeling
         logger.info("Step 7: Triple barrier labeling")
-        labeler = TripleBarrierLabeler(cfg.labeling.triple_barrier, calendar)
+        # Pass bars and assets config for MFE/MAE mode (if needed)
+        labeler = TripleBarrierLabeler(
+            cfg.labeling.triple_barrier, 
+            calendar,
+            bars=bars,
+            assets_config=dict(cfg.assets)
+        )
         labels_df = labeler.label_dataset(bars, all_features.index)
+        
+        # Log MFE/MAE parameters if used
+        if hasattr(labeler, 'mfe_quantile_val') and labeler.mfe_quantile_val is not None:
+            mlflow.log_params({
+                'tp_ticks_mfe_mae': labeler.tp_ticks,
+                'sl_ticks_mfe_mae': labeler.sl_ticks,
+                'mfe_quantile': labeler.mfe_quantile_val,
+                'mae_quantile': labeler.mae_quantile_val,
+                'mfe_mae_horizon_bars': cfg.labeling.triple_barrier.mfe_mae.horizon_bars
+            })
         
         logger.info(f"Created {len(labels_df)} labels (before filtering)")
         mlflow.log_metric('n_labels', len(labels_df))
