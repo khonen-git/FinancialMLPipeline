@@ -25,6 +25,7 @@ from src.data.schema_detection import SchemaDetector
 from src.data.bars import BarBuilder
 from src.labeling.session_calendar import SessionCalendar
 from src.labeling.triple_barrier import TripleBarrierLabeler
+from src.labeling.meta_labeling import create_meta_labels
 from src.features.price import create_price_features
 from src.features.microstructure import create_microstructure_features
 from src.features.bars_stats import create_bar_stats_features
@@ -273,13 +274,17 @@ def run_pipeline(cfg: DictConfig):
             mlflow.log_metric('n_labels_sl', label_counts.get(-1, 0))
             mlflow.log_metric('n_labels_time', label_counts.get(0, 0))
         
+        # Save complete labels (with label=0) for meta-labeling BEFORE filtering
+        labels_df_all = labels_df.copy()  # Complete labels: 1, 0, -1
+        
         # DROP label=0 (time barrier) - keep only TP (+1) and SL (-1)
-        # Binary classification for direction prediction only
+        # Binary classification for direction prediction only (Primary model)
         labels_before = len(labels_df)
         labels_df = labels_df[labels_df['label'] != 0].copy()
         labels_after = len(labels_df)
         logger.info(f"Dropped label=0: {labels_before} → {labels_after} ({labels_after/labels_before*100:.1f}% retained)")
-        logger.info(f"Binary classification: +1 (TP) vs -1 (SL) only")
+        logger.info(f"Binary classification: +1 (TP) vs -1 (SL) only (Primary model)")
+        logger.info(f"Meta-labeling will use all {len(labels_df_all)} labels (including label=0)")
         
         # Log distribution AFTER filtering
         if len(labels_df) > 0 and 'label' in labels_df.columns:
@@ -391,10 +396,11 @@ def run_pipeline(cfg: DictConfig):
                 f"test_size={cv.test_size}, gap={cv.gap} bars"
             )
         
-        # Step 10: Train model with cross-validation
-        logger.info("Step 10: Training Random Forest with cross-validation")
+        # Step 10: Train Primary Model (direction prediction: 1 vs -1)
+        logger.info("Step 10: Training Primary Random Forest (direction: +1 vs -1)")
         accuracy = 0.0  # Initialize
         accuracies = []
+        primary_models = []  # Store models for meta-labeling
         
         if len(X) > 0:
             # Pass label_indices to enable advanced purging
@@ -404,12 +410,13 @@ def run_pipeline(cfg: DictConfig):
                 X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
                 y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
                 
-                # Train
-                rf_model = RandomForestCPU(cfg.models.random_forest)
-                rf_model.fit(X_train, y_train)
+                # Train Primary Model (direction: 1 vs -1)
+                primary_model = RandomForestCPU(cfg.models.random_forest)
+                primary_model.fit(X_train, y_train)
+                primary_models.append(primary_model)
                 
                 # Evaluate with multiple metrics (not just accuracy)
-                y_pred = rf_model.predict(X_test)
+                y_pred = primary_model.predict(X_test)
                 fold_accuracy = (y_pred == y_test).mean()
                 accuracies.append(fold_accuracy)
                 
@@ -421,24 +428,150 @@ def run_pipeline(cfg: DictConfig):
                 recall = recall_score(y_test, y_pred, average='binary', pos_label=1, zero_division=0)
                 f1 = f1_score(y_test, y_pred, average='binary', pos_label=1, zero_division=0)
                 
-                logger.info(f"Fold {fold} metrics:")
+                logger.info(f"Fold {fold} Primary Model metrics:")
                 logger.info(f"  Accuracy:  {fold_accuracy:.2%}")
                 logger.info(f"  Precision: {precision:.2%} (TP when predicted +1)")
                 logger.info(f"  Recall:    {recall:.2%}")
                 logger.info(f"  F1:        {f1:.2%}")
                 
-                mlflow.log_metric(f'fold_{fold}_accuracy', fold_accuracy)
-                mlflow.log_metric(f'fold_{fold}_precision', precision)
-                mlflow.log_metric(f'fold_{fold}_recall', recall)
-                mlflow.log_metric(f'fold_{fold}_f1', f1)
+                mlflow.log_metric(f'fold_{fold}_primary_accuracy', fold_accuracy)
+                mlflow.log_metric(f'fold_{fold}_primary_precision', precision)
+                mlflow.log_metric(f'fold_{fold}_primary_recall', recall)
+                mlflow.log_metric(f'fold_{fold}_primary_f1', f1)
             
             # Calculate mean accuracy across all folds
             if accuracies:
                 accuracy = np.mean(accuracies)
-                logger.info(f"Mean accuracy across {len(accuracies)} folds: {accuracy:.2%}")
-                mlflow.log_metric('mean_cv_accuracy', accuracy)
+                logger.info(f"Mean Primary Model accuracy across {len(accuracies)} folds: {accuracy:.2%}")
+                mlflow.log_metric('mean_primary_cv_accuracy', accuracy)
         else:
             logger.warning("No data available for training, skipping model training")
+        
+        # Step 10b: Meta-labeling (PnL-based filtering)
+        logger.info("Step 10b: Meta-labeling (PnL-based trade filtering)")
+        
+        # Prepare complete dataset with all labels (including label=0)
+        # Align labels_df_all with features using bar_timestamp
+        if len(labels_df_all) > 0:
+            if 'bar_timestamp' in labels_df_all.columns:
+                labels_all_indexed = labels_df_all.set_index('bar_timestamp')
+            elif 'event_start' in labels_df_all.columns:
+                labels_all_indexed = labels_df_all.set_index('event_start')
+            else:
+                logger.warning("Cannot align complete labels for meta-labeling, skipping")
+                labels_all_indexed = pd.DataFrame()
+        else:
+            labels_all_indexed = pd.DataFrame()
+        
+        if len(labels_all_indexed) > 0 and len(X) > 0:
+            # Merge features with complete labels (all barrier types)
+            dataset_all = all_features.join(labels_all_indexed, how='inner')
+            logger.info(f"Meta-labeling dataset: {len(dataset_all)} samples (including label=0)")
+            
+            # Create meta-labels: 1 if PnL > 0, 0 otherwise
+            if 'pnl' in dataset_all.columns and 'label' in dataset_all.columns:
+                # Create meta-labels from complete labels (including label=0)
+                meta_labels = create_meta_labels(dataset_all[['label', 'pnl']])
+                
+                # Prepare meta-features: base features + primary model probabilities
+                # For each fold, we need to get primary model probabilities on the full dataset
+                # We'll use the last trained primary model for simplicity (or average across folds)
+                logger.info("Preparing meta-features (base features + primary model probabilities)")
+                
+                # Use the last primary model to get probabilities on full dataset
+                if primary_models:
+                    last_primary_model = primary_models[-1]
+                    # Get primary model probabilities for all samples
+                    # Note: We need to align with the complete dataset
+                    X_all = dataset_all[all_features.columns]
+                    
+                    # Get probabilities for class +1 (TP)
+                    primary_proba = last_primary_model.predict_proba(X_all)
+                    # For binary classification, proba shape is (n_samples, 2)
+                    # Classes are ordered by sklearn: typically [-1, 1] or [1, -1]
+                    # We want the probability of class +1
+                    classes = last_primary_model.model.classes_
+                    if len(classes) == 2:
+                        # Find which column corresponds to class +1
+                        pos_class_idx = np.where(classes == 1)[0]
+                        if len(pos_class_idx) > 0:
+                            primary_proba_pos = primary_proba[:, pos_class_idx[0]]
+                        else:
+                            # Should not happen, but fallback
+                            logger.warning(f"Class +1 not found in primary model classes {classes}, using second column")
+                            primary_proba_pos = primary_proba[:, 1]
+                    else:
+                        logger.warning(f"Unexpected number of classes in primary model: {len(classes)}, using first column")
+                        primary_proba_pos = primary_proba[:, 0]
+                    
+                    # Create meta-features
+                    meta_features = X_all.copy()
+                    meta_features['primary_proba'] = primary_proba_pos
+                    
+                    # Align meta_labels with meta_features
+                    common_idx = meta_features.index.intersection(meta_labels.index)
+                    if len(common_idx) > 0:
+                        meta_features_aligned = meta_features.loc[common_idx]
+                        meta_labels_aligned = meta_labels.loc[common_idx]
+                        
+                        logger.info(f"Meta-labeling: {len(meta_features_aligned)} samples, "
+                                  f"{meta_labels_aligned.sum()} positive ({meta_labels_aligned.mean():.2%})")
+                        
+                        # Train Meta Model with cross-validation
+                        logger.info("Training Meta Model (PnL-based filtering) with cross-validation")
+                        
+                        # Prepare label_indices for meta-labeling (same structure)
+                        label_indices_meta = pd.DataFrame({
+                            'start_idx': labels_all_indexed.loc[common_idx, 'bar_index_start'].values,
+                            'end_idx': labels_all_indexed.loc[common_idx, 'bar_index_end'].values
+                        }, index=common_idx)
+                        
+                        meta_accuracies = []
+                        for fold, (train_idx, test_idx) in enumerate(cv.split(meta_features_aligned, label_indices=label_indices_meta)):
+                            logger.info(f"Meta Fold {fold}: train={len(train_idx)}, test={len(test_idx)}")
+                            
+                            X_meta_train = meta_features_aligned.iloc[train_idx]
+                            X_meta_test = meta_features_aligned.iloc[test_idx]
+                            y_meta_train = meta_labels_aligned.iloc[train_idx]
+                            y_meta_test = meta_labels_aligned.iloc[test_idx]
+                            
+                            # Train Meta Model
+                            meta_model = RandomForestCPU(cfg.models.random_forest)
+                            meta_model.fit(X_meta_train, y_meta_train)
+                            
+                            # Evaluate Meta Model
+                            y_meta_pred = meta_model.predict(X_meta_test)
+                            meta_accuracy = (y_meta_pred == y_meta_test).mean()
+                            meta_accuracies.append(meta_accuracy)
+                            
+                            # Meta model metrics (precision is key for trading)
+                            meta_precision = precision_score(y_meta_test, y_meta_pred, average='binary', pos_label=1, zero_division=0)
+                            meta_recall = recall_score(y_meta_test, y_meta_pred, average='binary', pos_label=1, zero_division=0)
+                            meta_f1 = f1_score(y_meta_test, y_meta_pred, average='binary', pos_label=1, zero_division=0)
+                            
+                            logger.info(f"Meta Fold {fold} metrics:")
+                            logger.info(f"  Accuracy:  {meta_accuracy:.2%}")
+                            logger.info(f"  Precision: {meta_precision:.2%} (key metric: avoid bad trades)")
+                            logger.info(f"  Recall:    {meta_recall:.2%}")
+                            logger.info(f"  F1:        {meta_f1:.2%}")
+                            
+                            mlflow.log_metric(f'fold_{fold}_meta_accuracy', meta_accuracy)
+                            mlflow.log_metric(f'fold_{fold}_meta_precision', meta_precision)
+                            mlflow.log_metric(f'fold_{fold}_meta_recall', meta_recall)
+                            mlflow.log_metric(f'fold_{fold}_meta_f1', meta_f1)
+                        
+                        if meta_accuracies:
+                            mean_meta_accuracy = np.mean(meta_accuracies)
+                            logger.info(f"Mean Meta Model accuracy: {mean_meta_accuracy:.2%}")
+                            mlflow.log_metric('mean_meta_cv_accuracy', mean_meta_accuracy)
+                    else:
+                        logger.warning("No common indices between meta_features and meta_labels")
+                else:
+                    logger.warning("No primary models available for meta-labeling")
+            else:
+                logger.warning("PnL column missing in complete labels, skipping meta-labeling")
+        else:
+            logger.warning("Cannot prepare meta-labeling dataset, skipping")
         
         # Step 11: Backtesting (simplified placeholder)
         logger.info("Step 11: Backtesting")
