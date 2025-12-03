@@ -1,11 +1,17 @@
-"""MFE (Maximum Favorable Excursion) and MAE (Maximum Adverse Excursion) features.
+"""MFE (Maximum Favorable Excursion) and MAE (Maximum Adverse Excursion) computation.
 
 MFE = Maximum profit during the trade horizon
 MAE = Maximum loss during the trade horizon
 
-These features can be used to:
-1. Select optimal TP/SL based on quantile distribution
-2. As features for ML models (expected excursion ranges)
+⚠️ WARNING: MFE/MAE uses FUTURE data (looks ahead in the horizon).
+DO NOT use MFE/MAE values as features for ML models - this causes data leakage!
+
+These functions should ONLY be used to:
+1. Select optimal TP/SL based on quantile distribution (historical analysis)
+2. Analyze past data to suggest TP/SL parameters
+
+The quantiles computed from MFE/MAE can be used to set TP/SL parameters,
+but the individual MFE/MAE values should NEVER be used as model features.
 """
 
 import logging
@@ -22,6 +28,10 @@ def compute_mfe_mae(
 ) -> pd.DataFrame:
     """Compute MFE and MAE for each bar over a fixed horizon.
     
+    ⚠️ WARNING: This function uses FUTURE data (looks ahead).
+    DO NOT use the returned DataFrame as features for ML models!
+    This function should ONLY be used to compute quantiles for TP/SL selection.
+    
     MFE (Maximum Favorable Excursion): Maximum profit during horizon
     MAE (Maximum Adverse Excursion): Maximum loss during horizon
     
@@ -31,7 +41,7 @@ def compute_mfe_mae(
         quantile: Quantile to extract for TP/SL suggestion (0.5 = median)
         
     Returns:
-        DataFrame with MFE/MAE features
+        DataFrame with MFE/MAE values (for quantile analysis only, NOT for features)
     """
     features = pd.DataFrame(index=bars.index)
     
@@ -70,21 +80,11 @@ def compute_mfe_mae(
     features['mfe'] = mfe_values
     features['mae'] = mae_values
     
-    # Compute ratio (profit/loss potential)
-    features['mfe_mae_ratio'] = np.where(
-        mae_values > 0,
-        mfe_values / mae_values,
-        np.nan
-    )
+    # Note: We do NOT create rolling statistics or ratios here
+    # because these would be used as features, which causes data leakage.
+    # This function is ONLY for computing quantiles to suggest TP/SL.
     
-    # Rolling statistics (useful as features)
-    for window in [20, 50]:
-        features[f'mfe_mean_{window}'] = features['mfe'].rolling(window=window).mean()
-        features[f'mae_mean_{window}'] = features['mae'].rolling(window=window).mean()
-        features[f'mfe_std_{window}'] = features['mfe'].rolling(window=window).std()
-        features[f'mae_std_{window}'] = features['mae'].rolling(window=window).std()
-    
-    logger.info(f"Created {len(features.columns)} MFE/MAE features")
+    logger.info(f"Computed MFE/MAE for {len(features)} bars (for TP/SL quantile analysis only)")
     
     # Log quantile statistics (useful for TP/SL selection)
     valid_mfe = features['mfe'].dropna()

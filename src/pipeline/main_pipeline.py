@@ -169,12 +169,13 @@ def run_pipeline(cfg: DictConfig):
                 f"TP quantile={tp_quantile}, SL quantile={sl_quantile}"
             )
             
-            # Compute MFE/MAE features once
-            mfe_mae_features = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=tp_quantile)
+            # Compute MFE/MAE for quantile analysis (NOT as features - uses future data)
+            # This is only used to suggest TP/SL parameters, not for model training
+            mfe_mae_data = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=tp_quantile)
             
-            # Extract MFE and MAE quantiles
-            valid_mfe = mfe_mae_features['mfe'].dropna()
-            valid_mae = mfe_mae_features['mae'].dropna()
+            # Extract MFE and MAE quantiles for TP/SL suggestion
+            valid_mfe = mfe_mae_data['mfe'].dropna()
+            valid_mae = mfe_mae_data['mae'].dropna()
             
             if len(valid_mfe) == 0 or len(valid_mae) == 0:
                 logger.warning("Insufficient data for MFE/MAE analysis, using defaults")
@@ -210,26 +211,23 @@ def run_pipeline(cfg: DictConfig):
                 'mfe_mae_horizon_bars': horizon_bars
             })
         else:
-            # Regular features mode: compute MFE/MAE if enabled
+            # MFE/MAE should NOT be used as features (data leakage - uses future data)
+            # It should only be used for TP/SL parameter selection
+            # Check if someone tried to enable it as features and warn them
             mfe_mae_enabled = cfg.features.get('mfe_mae', {}).get('enabled', False)
             if mfe_mae_enabled:
-                if 'horizon_bars' not in cfg.features.mfe_mae:
-                    raise ValueError("Missing required config: features.mfe_mae.horizon_bars (required when enabled=True)")
-                if 'quantile' not in cfg.features.mfe_mae:
-                    raise ValueError("Missing required config: features.mfe_mae.quantile (required when enabled=True)")
-                horizon = cfg.features.mfe_mae.horizon_bars
-                quantile = cfg.features.mfe_mae.quantile
-                mfe_mae_features = compute_mfe_mae(bars, horizon_bars=horizon, quantile=quantile)
-            else:
-                mfe_mae_features = pd.DataFrame(index=bars.index)
+                logger.warning(
+                    "⚠️ MFE/MAE features are disabled to prevent data leakage. "
+                    "MFE/MAE uses future data and should only be used for TP/SL parameter selection, "
+                    "not as model features. Use distance_mode='mfe_mae' in labeling.triple_barrier instead."
+                )
         
         all_features = pd.concat([
             price_features, 
             micro_features, 
             bar_features,
             ma_slope_features,
-            ma_cross_features,
-            mfe_mae_features
+            ma_cross_features
         ], axis=1)
         logger.info(f"Created {len(all_features.columns)} total features")
         
