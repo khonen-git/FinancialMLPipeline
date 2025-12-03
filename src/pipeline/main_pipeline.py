@@ -127,8 +127,8 @@ def run_pipeline(cfg: DictConfig):
         ma_slope_features = create_ma_slope_features(bars, periods=[5, 10, 20, 50])
         ma_cross_features = create_ma_cross_features(bars)
         
-        # Add MFE/MAE features (Maximum Favorable/Adverse Excursion)
-        from src.features.mfe_mae import compute_mfe_mae
+        # MFE/MAE analysis for TP/SL parameter selection (Maximum Favorable/Adverse Excursion)
+        from src.labeling.mfe_mae import compute_mfe_mae
         
         # Require distance_mode
         if 'distance_mode' not in cfg.labeling.triple_barrier:

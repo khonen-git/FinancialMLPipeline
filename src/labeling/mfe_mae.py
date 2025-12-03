@@ -7,8 +7,7 @@ MAE = Maximum loss during the trade horizon
 DO NOT use MFE/MAE values as features for ML models - this causes data leakage!
 
 These functions should ONLY be used to:
-1. Select optimal TP/SL based on quantile distribution (historical analysis)
-2. Analyze past data to suggest TP/SL parameters
+- Select optimal TP/SL based on quantile distribution (historical analysis)
 
 The quantiles computed from MFE/MAE can be used to set TP/SL parameters,
 but the individual MFE/MAE values should NEVER be used as model features.
