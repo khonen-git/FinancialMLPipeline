@@ -32,10 +32,19 @@ def run_monte_carlo_simulation(
     logger.info(f"Running {n_simulations} Monte Carlo simulations")
     
     # Extract parameters
-    initial_capital = config.get('initial_capital', 10000)
-    max_drawdown_pct = config.get('max_drawdown_pct', 0.10)  # 10%
-    profit_target_pct = config.get('profit_target_pct', 0.10)  # 10%
-    max_trades_per_sim = config.get('max_trades', 1000)
+    if 'initial_capital' not in config:
+        raise ValueError("Missing required config: initial_capital")
+    if 'max_drawdown_pct' not in config:
+        raise ValueError("Missing required config: max_drawdown_pct")
+    if 'profit_target_pct' not in config:
+        raise ValueError("Missing required config: profit_target_pct")
+    if 'max_trades' not in config:
+        raise ValueError("Missing required config: max_trades")
+    
+    initial_capital = config['initial_capital']
+    max_drawdown_pct = config['max_drawdown_pct']
+    profit_target_pct = config['profit_target_pct']
+    max_trades_per_sim = config['max_trades']
     
     # Trade PnL distribution
     trade_pnls = trade_outcomes['pnl'].values
@@ -124,9 +133,16 @@ def analyze_prop_firm_constraints(
     """
     logger.info("Analyzing prop firm constraints")
     
-    initial_capital = config.get('initial_capital', 10000)
-    max_daily_loss_pct = config.get('max_daily_loss_pct', 0.05)
-    max_total_loss_pct = config.get('max_total_loss_pct', 0.10)
+    if 'initial_capital' not in config:
+        raise ValueError("Missing required config: initial_capital")
+    if 'max_daily_loss_pct' not in config:
+        raise ValueError("Missing required config: max_daily_loss_pct")
+    if 'max_total_loss_pct' not in config:
+        raise ValueError("Missing required config: max_total_loss_pct")
+    
+    initial_capital = config['initial_capital']
+    max_daily_loss_pct = config['max_daily_loss_pct']
+    max_total_loss_pct = config['max_total_loss_pct']
     
     # Simplified analysis (could be extended)
     prob_ruin = mc_results['prob_ruin']

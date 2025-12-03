@@ -136,12 +136,16 @@ def create_microstructure_features(
     feature_dfs = []
     
     # Spread features
-    spread_lookbacks = config.get('spread_stats_lookbacks', [10])
+    if 'spread_stats_lookbacks' not in config:
+        raise ValueError("Missing required config: spread_stats_lookbacks")
+    spread_lookbacks = config['spread_stats_lookbacks']
     spread_df = compute_spread_features(bars, spread_lookbacks)
     feature_dfs.append(spread_df)
     
     # Order flow features
-    of_lookbacks = config.get('order_flow_lookbacks', [10, 20])
+    if 'order_flow_lookbacks' not in config:
+        raise ValueError("Missing required config: order_flow_lookbacks")
+    of_lookbacks = config['order_flow_lookbacks']
     of_df = compute_order_flow_imbalance(bars, of_lookbacks)
     feature_dfs.append(of_df)
     

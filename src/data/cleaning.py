@@ -70,8 +70,13 @@ def remove_price_outliers(
     Returns:
         DataFrame without outliers
     """
-    window = config.get('outlier_window', 100)
-    threshold = config.get('outlier_threshold', 5.0)
+    if 'outlier_window' not in config:
+        raise ValueError("Missing required config: outlier_window (required when remove_outliers=True)")
+    if 'outlier_threshold' not in config:
+        raise ValueError("Missing required config: outlier_threshold (required when remove_outliers=True)")
+    
+    window = config['outlier_window']
+    threshold = config['outlier_threshold']
     
     # Compute rolling mean and std
     rolling_mean = ticks[price_col].rolling(window=window, min_periods=1).mean()

@@ -24,8 +24,12 @@ class BarBuilder:
             config: Bar configuration
         """
         self.config = config
-        self.bar_type = config.get('type', 'tick')
-        self.threshold = config.get('threshold', 1000)
+        if 'type' not in config:
+            raise ValueError("Missing required config: type")
+        if 'threshold' not in config:
+            raise ValueError("Missing required config: threshold")
+        self.bar_type = config['type']
+        self.threshold = config['threshold']
     
     def build_bars(self, ticks: pd.DataFrame) -> pd.DataFrame:
         """Build bars from ticks.

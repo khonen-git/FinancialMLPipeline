@@ -208,22 +208,47 @@ class TripleBarrierLabeler:
         self.config = config
         self.calendar = session_calendar
         
-        self.tp_ticks = config.get('tp_ticks', 100)
-        self.sl_ticks = config.get('sl_ticks', 100)
-        self.max_horizon_bars = config.get('max_horizon_bars', 50)
-        self.min_horizon_bars = config.get('min_horizon_bars', 10)
-        self.distance_mode = config.get('distance_mode', 'ticks')
-        self.tick_size = config.get('tick_size', 0.0001)
+        # Require distance_mode
+        if 'distance_mode' not in config:
+            raise ValueError("Missing required config: distance_mode")
+        self.distance_mode = config['distance_mode']
+        
+        # Require max_horizon_bars and min_horizon_bars
+        if 'max_horizon_bars' not in config:
+            raise ValueError("Missing required config: max_horizon_bars")
+        if 'min_horizon_bars' not in config:
+            raise ValueError("Missing required config: min_horizon_bars")
+        self.max_horizon_bars = config['max_horizon_bars']
+        self.min_horizon_bars = config['min_horizon_bars']
         
         # Pre-computed price distances
         # Only use convert_ticks_to_price for 'ticks' mode
         if self.distance_mode == 'ticks':
+            # Require tp_ticks, sl_ticks, and tick_size for ticks mode
+            if 'tp_ticks' not in config:
+                raise ValueError("Missing required config: tp_ticks (required when distance_mode='ticks')")
+            if 'sl_ticks' not in config:
+                raise ValueError("Missing required config: sl_ticks (required when distance_mode='ticks')")
+            if 'tick_size' not in config:
+                raise ValueError("Missing required config: tick_size (required when distance_mode='ticks')")
+            
+            self.tp_ticks = config['tp_ticks']
+            self.sl_ticks = config['sl_ticks']
+            self.tick_size = config['tick_size']
             self.tp_distance = convert_ticks_to_price(self.tp_ticks, self.tick_size)
             self.sl_distance = convert_ticks_to_price(self.sl_ticks, self.tick_size)
         elif self.distance_mode == 'mfe_mae':
             # MFE/MAE mode: TP/SL will be set dynamically from MFE/MAE quantiles
-            # Store the values that will be computed in the pipeline
-            # For now, use defaults (will be overridden)
+            # Require mfe_mae config block
+            if 'mfe_mae' not in config:
+                raise ValueError(
+                    "Missing required config: mfe_mae (required when distance_mode='mfe_mae')"
+                )
+            # TP/SL will be set by pipeline, use temporary values
+            # tick_size will be provided by assets config
+            self.tp_ticks = config.get('tp_ticks', 100)  # Temporary, will be overridden
+            self.sl_ticks = config.get('sl_ticks', 100)  # Temporary, will be overridden
+            self.tick_size = config.get('tick_size', 0.00001)  # Temporary, will be overridden
             self.tp_distance = convert_ticks_to_price(self.tp_ticks, self.tick_size)
             self.sl_distance = convert_ticks_to_price(self.sl_ticks, self.tick_size)
         else:

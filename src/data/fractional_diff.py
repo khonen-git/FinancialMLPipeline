@@ -122,8 +122,13 @@ def apply_frac_diff_to_features(
     if not config.get('enabled', False):
         return features
     
-    d = config.get('d', 0.5)
-    columns = config.get('columns', [])
+    if 'd' not in config:
+        raise ValueError("Missing required config: d (required when fractional_diff.enabled=True)")
+    if 'columns' not in config:
+        raise ValueError("Missing required config: columns (required when fractional_diff.enabled=True)")
+    
+    d = config['d']
+    columns = config['columns']
     
     if len(columns) == 0:
         logger.info("No columns specified for fractional differencing")

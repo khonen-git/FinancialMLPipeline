@@ -19,12 +19,22 @@ class RandomForestCPU:
             config: Model configuration
         """
         self.config = config
-        params = config.get('params', {})
+        if 'params' not in config:
+            raise ValueError("Missing required config: params")
+        params = config['params']
+        
+        # Require essential parameters
+        if 'n_estimators' not in params:
+            raise ValueError("Missing required config: params.n_estimators")
+        if 'max_depth' not in params:
+            raise ValueError("Missing required config: params.max_depth")
+        if 'min_samples_leaf' not in params:
+            raise ValueError("Missing required config: params.min_samples_leaf")
         
         self.model = RandomForestClassifier(
-            n_estimators=params.get('n_estimators', 200),
-            max_depth=params.get('max_depth', 10),
-            min_samples_leaf=params.get('min_samples_leaf', 5),
+            n_estimators=params['n_estimators'],
+            max_depth=params['max_depth'],
+            min_samples_leaf=params['min_samples_leaf'],
             n_jobs=params.get('n_jobs', -1),
             class_weight=params.get('class_weight', 'balanced'),
             random_state=42
@@ -32,7 +42,12 @@ class RandomForestCPU:
         
         self.calibrated_model = None
         self.use_calibration = config.get('calibration', {}).get('enabled', False)
-        self.calibration_method = config.get('calibration', {}).get('method', 'isotonic')
+        if self.use_calibration:
+            if 'calibration' not in config or 'method' not in config.calibration:
+                raise ValueError("Missing required config: calibration.method (required when calibration.enabled=True)")
+            self.calibration_method = config.calibration.method
+        else:
+            self.calibration_method = config.get('calibration', {}).get('method', 'isotonic')
     
     def fit(
         self,

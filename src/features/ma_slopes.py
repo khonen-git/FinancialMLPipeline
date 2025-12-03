@@ -13,7 +13,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def create_ma_slope_features(bars: pd.DataFrame, periods: list = None) -> pd.DataFrame:
+def create_ma_slope_features(bars: pd.DataFrame, periods: list) -> pd.DataFrame:
     """Create moving average slope features.
     
     Args:

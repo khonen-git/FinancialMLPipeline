@@ -111,19 +111,25 @@ def create_price_features(
     feature_dfs = []
     
     # Returns
-    returns_lookbacks = config.get('returns_lookbacks', [1, 5, 20])
+    if 'returns_lookbacks' not in config:
+        raise ValueError("Missing required config: returns_lookbacks")
+    returns_lookbacks = config['returns_lookbacks']
     returns_df = compute_returns(prices, returns_lookbacks)
     feature_dfs.append(returns_df)
     
     # Volatility (needs returns)
-    vol_lookbacks = config.get('volatility_lookbacks', [20, 50])
+    if 'volatility_lookbacks' not in config:
+        raise ValueError("Missing required config: volatility_lookbacks")
+    vol_lookbacks = config['volatility_lookbacks']
     ret_1 = np.log(prices / prices.shift(1))
     vol_df = compute_volatility(ret_1, vol_lookbacks)
     feature_dfs.append(vol_df)
     
     # Bar ranges
     if 'high' in bars.columns and 'low' in bars.columns:
-        range_lookbacks = config.get('range_lookbacks', [20])
+        if 'range_lookbacks' not in config:
+            raise ValueError("Missing required config: range_lookbacks")
+        range_lookbacks = config['range_lookbacks']
         range_df = compute_bar_ranges(bars, range_lookbacks)
         feature_dfs.append(range_df)
     

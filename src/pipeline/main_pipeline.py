@@ -56,8 +56,9 @@ def run_pipeline(cfg: DictConfig):
     logger.info("=" * 80)
     
     # Setup MLflow
-    tracking_uri = cfg.get('mlflow', {}).get('tracking_uri', './mlruns')
-    mlflow.set_tracking_uri(tracking_uri)
+    if 'mlflow' not in cfg or 'tracking_uri' not in cfg.mlflow:
+        raise ValueError("Missing required config: mlflow.tracking_uri")
+    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
     mlflow.set_experiment(cfg.experiment.name)
     
     with mlflow.start_run():
@@ -71,12 +72,16 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 1: Load data
         logger.info("Step 1: Loading data")
-        # Use filename from config if specified, otherwise construct from symbol
-        filename = cfg.data.dukascopy.get('filename', f"{cfg.assets.symbol}.parquet")
+        # Require filename in config
+        if 'filename' not in cfg.data.dukascopy:
+            raise ValueError("Missing required config: data.dukascopy.filename")
+        filename = cfg.data.dukascopy.filename
         data_path = Path(cfg.data.dukascopy.raw_dir) / filename
         
-        # Support both CSV and Parquet formats
-        file_format = cfg.data.dukascopy.get('format', 'auto')
+        # Require format in config
+        if 'format' not in cfg.data.dukascopy:
+            raise ValueError("Missing required config: data.dukascopy.format")
+        file_format = cfg.data.dukascopy.format
         if file_format == 'auto':
             file_format = 'csv' if str(data_path).endswith('.csv') else 'parquet'
         
@@ -123,18 +128,40 @@ def run_pipeline(cfg: DictConfig):
         
         # Add MFE/MAE features (Maximum Favorable/Adverse Excursion)
         from src.features.mfe_mae import compute_mfe_mae
-        distance_mode = cfg.labeling.triple_barrier.get('distance_mode', 'ticks')
+        
+        # Require distance_mode
+        if 'distance_mode' not in cfg.labeling.triple_barrier:
+            raise ValueError("Missing required config: labeling.triple_barrier.distance_mode")
+        distance_mode = cfg.labeling.triple_barrier.distance_mode
         
         # Check if we need to compute MFE/MAE for TP/SL
         if distance_mode == 'mfe_mae':
             logger.info("Using MFE/MAE mode: computing TP/SL from quantiles")
             
-            # Get MFE/MAE parameters from labeling config
-            mfe_mae_config = cfg.labeling.triple_barrier.get('mfe_mae', {})
-            horizon_bars = mfe_mae_config.get('horizon_bars', 8)  # 8 bars of 100 ticks = 800 ticks
-            tp_quantile = mfe_mae_config.get('tp_quantile', 0.5)
-            sl_quantile = mfe_mae_config.get('sl_quantile', 0.5)
-            tick_size = cfg.assets.get('tick_size', 0.00001)
+            # Require MFE/MAE config block
+            if 'mfe_mae' not in cfg.labeling.triple_barrier:
+                raise ValueError(
+                    "Missing required config: labeling.triple_barrier.mfe_mae "
+                    "(required when distance_mode='mfe_mae')"
+                )
+            mfe_mae_config = cfg.labeling.triple_barrier.mfe_mae
+            
+            # Require MFE/MAE parameters
+            if 'horizon_bars' not in mfe_mae_config:
+                raise ValueError("Missing required config: labeling.triple_barrier.mfe_mae.horizon_bars")
+            if 'tp_quantile' not in mfe_mae_config:
+                raise ValueError("Missing required config: labeling.triple_barrier.mfe_mae.tp_quantile")
+            if 'sl_quantile' not in mfe_mae_config:
+                raise ValueError("Missing required config: labeling.triple_barrier.mfe_mae.sl_quantile")
+            
+            horizon_bars = mfe_mae_config.horizon_bars
+            tp_quantile = mfe_mae_config.tp_quantile
+            sl_quantile = mfe_mae_config.sl_quantile
+            
+            # Require tick_size
+            if 'tick_size' not in cfg.assets:
+                raise ValueError("Missing required config: assets.tick_size")
+            tick_size = cfg.assets.tick_size
             
             logger.info(
                 f"MFE/MAE config: horizon={horizon_bars} bars, "
@@ -185,8 +212,12 @@ def run_pipeline(cfg: DictConfig):
             # Regular features mode: compute MFE/MAE if enabled
             mfe_mae_enabled = cfg.features.get('mfe_mae', {}).get('enabled', False)
             if mfe_mae_enabled:
-                horizon = cfg.features.mfe_mae.get('horizon_bars', 32)
-                quantile = cfg.features.mfe_mae.get('quantile', 0.5)
+                if 'horizon_bars' not in cfg.features.mfe_mae:
+                    raise ValueError("Missing required config: features.mfe_mae.horizon_bars (required when enabled=True)")
+                if 'quantile' not in cfg.features.mfe_mae:
+                    raise ValueError("Missing required config: features.mfe_mae.quantile (required when enabled=True)")
+                horizon = cfg.features.mfe_mae.horizon_bars
+                quantile = cfg.features.mfe_mae.quantile
                 mfe_mae_features = compute_mfe_mae(bars, horizon_bars=horizon, quantile=quantile)
             else:
                 mfe_mae_features = pd.DataFrame(index=bars.index)
@@ -309,7 +340,9 @@ def run_pipeline(cfg: DictConfig):
         logger.info(f"Final dataset: {len(X)} samples, {len(X.columns)} features")
         
         # Step 9: Cross-validation setup
-        cv_type = cfg.validation.get('cv_type', 'time_series')
+        if 'cv_type' not in cfg.validation:
+            raise ValueError("Missing required config: validation.cv_type")
+        cv_type = cfg.validation.cv_type
         logger.info(f"Step 9: Setting up {cv_type} cross-validation")
         
         # Prepare label_indices for advanced purging (avoid label overlap)
@@ -321,9 +354,14 @@ def run_pipeline(cfg: DictConfig):
         # Initialize CV splitter based on type
         if cv_type == 'cpcv':
             # Combinatorial Purged Cross-Validation
+            if 'n_groups' not in cfg.validation:
+                raise ValueError("Missing required config: validation.n_groups (required when cv_type='cpcv')")
+            if 'n_test_groups' not in cfg.validation:
+                raise ValueError("Missing required config: validation.n_test_groups (required when cv_type='cpcv')")
+            
             cv = CombinatorialPurgedCV(
-                n_groups=cfg.validation.get('n_groups', 10),
-                n_test_groups=cfg.validation.get('n_test_groups', 2),
+                n_groups=cfg.validation.n_groups,
+                n_test_groups=cfg.validation.n_test_groups,
                 embargo_size=cfg.validation.get('embargo_duration', 0),
                 max_combinations=cfg.validation.get('max_combinations', None),
                 random_state=cfg.experiment.get('seed', None)
@@ -334,9 +372,18 @@ def run_pipeline(cfg: DictConfig):
             )
         else:
             # Simple time-series CV (baseline, sklearn-based)
+            if 'n_splits' not in cfg.validation:
+                raise ValueError("Missing required config: validation.n_splits (required when cv_type='time_series')")
+            if 'test_size' not in cfg.validation and 'test_duration' not in cfg.validation:
+                raise ValueError(
+                    "Missing required config: validation.test_size or validation.test_duration "
+                    "(required when cv_type='time_series')"
+                )
+            
+            test_size = cfg.validation.get('test_size', cfg.validation.get('test_duration', None))
             cv = TimeSeriesCV(
                 n_splits=cfg.validation.n_splits,
-                test_size=cfg.validation.get('test_duration', None),
+                test_size=test_size,
                 gap=cfg.validation.get('gap', 0)
             )
             logger.info(

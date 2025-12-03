@@ -25,10 +25,19 @@ class MicroHMM:
             config: HMM micro configuration
         """
         self.config = config
-        self.n_states = config.get('n_states', 3)
-        self.covariance_type = config.get('covariance_type', 'full')
-        self.n_init = config.get('n_init', 5)
-        self.max_iter = config.get('max_iter', 500)
+        if 'n_states' not in config:
+            raise ValueError("Missing required config: n_states")
+        if 'covariance_type' not in config:
+            raise ValueError("Missing required config: covariance_type")
+        if 'n_init' not in config:
+            raise ValueError("Missing required config: n_init")
+        if 'max_iter' not in config:
+            raise ValueError("Missing required config: max_iter")
+        
+        self.n_states = config['n_states']
+        self.covariance_type = config['covariance_type']
+        self.n_init = config['n_init']
+        self.max_iter = config['max_iter']
         
         self.model = None
         self.scaler = StandardScaler()

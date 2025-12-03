@@ -28,7 +28,9 @@ class SessionCalendar:
             config: Session configuration from Hydra
         """
         self.config = config
-        self.timezone = config.get('timezone', 'UTC')
+        if 'timezone' not in config:
+            raise ValueError("Missing required config: timezone")
+        self.timezone = config['timezone']
         
         # Parse session times
         self.session_start = self._parse_time(config['session_start'])
