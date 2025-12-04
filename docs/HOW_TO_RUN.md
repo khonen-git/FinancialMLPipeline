@@ -220,8 +220,14 @@ This will:
 Start the MLflow UI in a separate terminal:
 
 ```bash
+# From project root directory
 mlflow ui --backend-store-uri file:./mlruns
 ```
+
+**Important**: 
+- Run this command from the **project root** (where `mlruns/` directory is located)
+- The `--backend-store-uri` must match the `tracking_uri` in `configs/mlflow/local.yaml` (default: `file:./mlruns`)
+- If `mlruns/` doesn't exist yet, it will be created automatically on first experiment run
 
 Then open in your browser:
 
@@ -239,8 +245,11 @@ You can then:
 
 - `config/config.yaml` → full Hydra config used
 - `reports/<name>.html` → full experiment report
-- `plots/` → equity curves, drawdown charts, etc.
-- `models/` → saved models (if implemented)
+- `backtest_trade_log.csv` → detailed trade log
+- `backtest_equity_curve.csv` → equity curve over time
+- `plots/` → equity curves, drawdown charts, etc. (if generated)
+
+**For detailed MLflow usage, see [MLFLOW.md](MLFLOW.md)**
 
 ---
 
