@@ -621,12 +621,32 @@ def run_pipeline(cfg: DictConfig):
                 # Use the last trained primary model for predictions on backtest data
                 if primary_models:
                     last_primary_model = primary_models[-1]
-                    backtest_X = backtest_all_features[all_features.columns].dropna()
+                    
+                    # CRITICAL: Use only features that exist in both training and backtest
+                    # Some features (like volume) may be NaN and dropped in one but not the other
+                    training_features = set(X.columns)
+                    backtest_features = set(backtest_all_features.columns)
+                    common_features = sorted(list(training_features & backtest_features))
+                    missing_in_backtest = training_features - backtest_features
+                    
+                    if missing_in_backtest:
+                        logger.warning(
+                            f"Features in training but missing in backtest: {list(missing_in_backtest)}. "
+                            f"These will be excluded from backtest predictions."
+                        )
+                    
+                    if len(common_features) == 0:
+                        raise ValueError("No common features between training and backtest!")
+                    
+                    # Use only common features
+                    backtest_X = backtest_all_features[common_features].dropna()
                     
                     # Validate backtest features consistency with training
                     logger.info("Validating backtest features consistency")
+                    # Create a subset of X with only common features for comparison
+                    X_common = X[common_features]
                     backtest_consistency = validate_feature_consistency(
-                        X, backtest_X, name_train="training", name_test="backtest"
+                        X_common, backtest_X, name_train="training", name_test="backtest"
                     )
                     if not backtest_consistency['is_consistent']:
                         logger.error("Backtest features are inconsistent with training features!")
@@ -638,7 +658,7 @@ def run_pipeline(cfg: DictConfig):
                         backtest_X, name="backtest features", strict=False
                     )
                     
-                    logger.info(f"Generating predictions on {len(backtest_X)} backtest samples")
+                    logger.info(f"Generating predictions on {len(backtest_X)} backtest samples using {len(common_features)} common features")
                     backtest_primary_predictions = last_primary_model.predict(backtest_X)
                     backtest_primary_proba = last_primary_model.predict_proba(backtest_X)
                     
