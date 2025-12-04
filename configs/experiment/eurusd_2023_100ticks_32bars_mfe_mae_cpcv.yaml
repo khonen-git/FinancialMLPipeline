@@ -1,0 +1,120 @@
+# @package _global_
+# EURUSD experiment: 100-tick bars, 32-bar horizon, MFE/MAE quantile 0.5, CPCV validation
+# Train on 2023, backtest on 2024
+
+experiment:
+  name: "eurusd_2023_100ticks_32bars_mfe_mae_cpcv"
+  description: "EURUSD: 100-tick bars, 32-bar fixed horizon, MFE/MAE q0.5, CPCV, train 2023 → backtest 2024"
+  seed: 42
+  tags: ["eurusd", "2023", "2024", "100ticks", "32bars", "mfe_mae", "cpcv", "meta_model"]
+
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.00001  # 1 pip = 10 ticks for EURUSD
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
+session:
+  timezone: "UTC"
+  session_start: "00:00"
+  session_end: "21:55"
+  friday_end: "20:00"
+  weekend_trading: false
+  labeling:
+    max_horizon_bars: 32
+    min_horizon_bars: 32  # Fixed horizon: exactly 32 bars
+
+data:
+  dukascopy:
+    raw_dir: "data/raw"
+    filename: "EURUSD_2023.csv"
+    format: "csv"
+  bars:
+    type: "tick"
+    threshold: 100  # 100 ticks per bar
+
+labeling:
+  triple_barrier:
+    distance_mode: "mfe_mae"  # Use MFE/MAE for TP/SL selection
+    mfe_mae:
+      horizon_bars: 32  # Fixed horizon for MFE/MAE computation
+      tp_quantile: 0.5  # Median MFE → TP
+      sl_quantile: 0.5  # Median MAE → SL
+    max_horizon_bars: 32  # Fixed horizon (not adaptive)
+    min_horizon_bars: 32  # Force exactly 32 bars
+
+features:
+  returns_lookbacks: [1, 5, 10, 20]
+  volatility_lookbacks: [10, 20, 50]
+  range_lookbacks: [10, 20]
+  spread_stats_lookbacks: [5, 10]
+  order_flow_lookbacks: [5, 10, 20]
+  ma_periods: [5, 10, 20, 50]  # MA slopes features (proven from previous project)
+
+models:
+  hmm:
+    macro:
+      enabled: false  # Disabled as requested
+      n_states: 3
+    micro:
+      enabled: false  # Disabled as requested
+      n_states: 3
+  random_forest:
+    params:
+      n_estimators: 200
+      max_depth: 10
+      min_samples_leaf: 5
+      n_jobs: -1
+      class_weight: "balanced"
+    calibration:
+      enabled: false
+  meta_model:
+    enabled: true  # Meta-model activated as requested
+    threshold: 0.5
+
+validation:
+  cv_type: "cpcv"  # Combinatorial Purged Cross-Validation
+  n_groups: 10  # Partition 2023 data into 10 groups
+  n_test_groups: 2  # Use 2 groups as test per fold
+  embargo_duration: 20  # 20 bars embargo after each test block
+  max_combinations: null  # Use all combinations (C(10,2) = 45 folds)
+
+backtest:
+  enabled: true
+  # Out-of-sample backtest on 2024 data
+  data:
+    filename: "EURUSD_2024.csv"  # Backtest on 2024 (different from training data 2023)
+    format: "csv"
+  sizing:
+    mode: "fixed"
+    size: 1.0
+  meta_model:
+    enabled: true
+    threshold: 0.5
+  capital:
+    initial: 10000.0
+  logs:
+    save_trades: true
+    save_equity: true
+    save_daily_stats: true
+
+risk:
+  mc_simulations: 1000
+  starting_capital: 10000.0
+  max_daily_loss: 0.03
+  max_total_drawdown: 0.2
+
+reporting:
+  enabled: true
+  output_dir: "outputs/reports"
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "eurusd_2023_100ticks_32bars_mfe_mae"
+
+runtime:
+  log_level: "INFO"
+  gpu_enabled: false
+

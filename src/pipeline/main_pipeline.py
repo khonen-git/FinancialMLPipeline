@@ -508,92 +508,228 @@ def run_pipeline(cfg: DictConfig):
         
         # Check if backtesting is enabled
         if cfg.backtest.get('enabled', True):
-            # Prepare predictions for backtesting
-            # We'll use the last trained primary model and meta model (if available)
-            if len(X) > 0 and primary_models:
-                logger.info("Preparing predictions for backtesting")
+            # Check if we need to load separate backtest data (out-of-sample)
+            backtest_data_file = cfg.backtest.get('data', {}).get('filename', None)
+            use_separate_backtest_data = backtest_data_file is not None
+            
+            if use_separate_backtest_data:
+                logger.info(f"Loading separate backtest data: {backtest_data_file}")
+                # Load backtest data (e.g., 2024 for out-of-sample testing)
+                backtest_data_path = Path(cfg.data.dukascopy.raw_dir) / backtest_data_file
+                backtest_file_format = cfg.backtest.get('data', {}).get('format', cfg.data.dukascopy.format)
+                if backtest_file_format == 'auto':
+                    backtest_file_format = 'csv' if str(backtest_data_path).endswith('.csv') else 'parquet'
                 
-                # Use the last primary model for predictions
-                last_primary_model = primary_models[-1]
-                
-                # Get primary model predictions on full dataset
-                primary_predictions = last_primary_model.predict(X)
-                primary_proba = last_primary_model.predict_proba(X)
-                
-                # Get probability of class +1
-                classes = last_primary_model.model.classes_
-                if len(classes) == 2:
-                    pos_class_idx = np.where(classes == 1)[0]
-                    if len(pos_class_idx) > 0:
-                        primary_proba_pos = primary_proba[:, pos_class_idx[0]]
-                    else:
-                        primary_proba_pos = primary_proba[:, 1] if primary_proba.shape[1] > 1 else primary_proba[:, 0]
+                if backtest_file_format == 'csv':
+                    backtest_ticks = pd.read_csv(backtest_data_path)
+                    if 'timestamp' in backtest_ticks.columns:
+                        backtest_ticks['timestamp'] = pd.to_datetime(backtest_ticks['timestamp'], unit='ms', utc=True)
                 else:
-                    primary_proba_pos = primary_proba[:, 0]
+                    backtest_ticks = pd.read_parquet(backtest_data_path)
                 
-                # Create predictions DataFrame
-                predictions_df = pd.DataFrame({
-                    'prediction': primary_predictions,
-                    'probability': primary_proba_pos,
-                }, index=X.index)
+                logger.info(f"Loaded {len(backtest_ticks)} ticks for backtesting from {backtest_data_path}")
                 
-                # Add meta-model predictions if available
-                # For now, we'll use a simple threshold on primary probability
-                # In a full implementation, we'd use the trained meta-model
-                if cfg.models.meta_model.get('enabled', False):
-                    # Meta decision: 1 if probability > threshold, 0 otherwise
-                    meta_threshold = cfg.backtest.get('meta_model', {}).get('threshold', 0.5)
-                    predictions_df['meta_decision'] = (primary_proba_pos >= meta_threshold).astype(int)
-                    logger.info(f"Meta-model filtering enabled: threshold={meta_threshold}")
-                else:
-                    predictions_df['meta_decision'] = 1  # Take all trades
+                # Clean backtest data
+                backtest_ticks = detector.validate_and_clean(backtest_ticks)
+                if 'timestamp' in backtest_ticks.columns:
+                    backtest_ticks = backtest_ticks.set_index('timestamp')
                 
-                # Align bars with predictions (use common timestamps)
-                bars_for_backtest = bars.loc[bars.index.intersection(predictions_df.index)]
-                predictions_aligned = predictions_df.loc[bars_for_backtest.index]
+                # Build bars for backtest
+                backtest_bars = bar_builder.build_bars(backtest_ticks)
+                logger.info(f"Built {len(backtest_bars)} bars for backtesting")
                 
-                if len(bars_for_backtest) > 0 and len(predictions_aligned) > 0:
-                    logger.info(f"Running backtest on {len(bars_for_backtest)} bars with {len(predictions_aligned)} predictions")
+                # Build features for backtest (same feature engineering as training)
+                backtest_price_features = create_price_features(backtest_bars, cfg.features)
+                backtest_micro_features = create_microstructure_features(backtest_bars, cfg.features)
+                backtest_bar_features = create_bar_stats_features(backtest_bars, cfg.features)
+                backtest_ma_slope_features = create_ma_slope_features(backtest_bars, periods=cfg.features.get('ma_periods', [5, 10, 20, 50]))
+                backtest_ma_cross_features = create_ma_cross_features(backtest_bars)
+                
+                backtest_all_features = pd.concat([
+                    backtest_price_features,
+                    backtest_micro_features,
+                    backtest_bar_features,
+                    backtest_ma_slope_features,
+                    backtest_ma_cross_features
+                ], axis=1)
+                
+                # Add HMM regimes if enabled (would need to predict on backtest data)
+                # For now, skip HMM for backtest data
+                
+                # Prepare backtest dataset (drop NaN)
+                backtest_all_features = backtest_all_features.dropna()
+                logger.info(f"Backtest features: {len(backtest_all_features)} samples, {len(backtest_all_features.columns)} features")
+                
+                # Use the last trained primary model for predictions on backtest data
+                if primary_models:
+                    last_primary_model = primary_models[-1]
+                    backtest_X = backtest_all_features[all_features.columns].dropna()
                     
-                    try:
-                        bt_results = run_backtest(
-                            bars=bars_for_backtest,
-                            predictions=predictions_aligned,
-                            session_calendar=calendar,
-                            config=dict(cfg.backtest),
-                            labeling_config=dict(cfg.labeling.triple_barrier),
-                            assets_config=dict(cfg.assets)
-                        )
+                    logger.info(f"Generating predictions on {len(backtest_X)} backtest samples")
+                    backtest_primary_predictions = last_primary_model.predict(backtest_X)
+                    backtest_primary_proba = last_primary_model.predict_proba(backtest_X)
+                    
+                    # Get probability of class +1
+                    classes = last_primary_model.model.classes_
+                    if len(classes) == 2:
+                        pos_class_idx = np.where(classes == 1)[0]
+                        if len(pos_class_idx) > 0:
+                            backtest_primary_proba_pos = backtest_primary_proba[:, pos_class_idx[0]]
+                        else:
+                            backtest_primary_proba_pos = backtest_primary_proba[:, 1] if backtest_primary_proba.shape[1] > 1 else backtest_primary_proba[:, 0]
+                    else:
+                        backtest_primary_proba_pos = backtest_primary_proba[:, 0]
+                    
+                    # Create predictions DataFrame for backtest
+                    backtest_predictions_df = pd.DataFrame({
+                        'prediction': backtest_primary_predictions,
+                        'probability': backtest_primary_proba_pos,
+                    }, index=backtest_X.index)
+                    
+                    # Add meta-model predictions if available
+                    # TODO: Use trained meta-model instead of simple threshold
+                    if cfg.models.meta_model.get('enabled', False):
+                        meta_threshold = cfg.backtest.get('meta_model', {}).get('threshold', 0.5)
+                        backtest_predictions_df['meta_decision'] = (backtest_primary_proba_pos >= meta_threshold).astype(int)
+                        logger.info(f"Meta-model filtering enabled: threshold={meta_threshold}")
+                    else:
+                        backtest_predictions_df['meta_decision'] = 1
+                    
+                    # Align backtest bars with predictions
+                    backtest_bars_aligned = backtest_bars.loc[backtest_bars.index.intersection(backtest_predictions_df.index)]
+                    backtest_predictions_aligned = backtest_predictions_df.loc[backtest_bars_aligned.index]
+                    
+                    if len(backtest_bars_aligned) > 0 and len(backtest_predictions_aligned) > 0:
+                        logger.info(f"Running backtest on {len(backtest_bars_aligned)} bars (out-of-sample)")
                         
-                        # Log backtest metrics to MLflow
-                        mlflow.log_metric('backtest_total_trades', bt_results['total_trades'])
-                        mlflow.log_metric('backtest_win_rate', bt_results['win_rate'])
-                        mlflow.log_metric('backtest_sharpe_ratio', bt_results['sharpe_ratio'])
-                        mlflow.log_metric('backtest_max_drawdown', bt_results['max_drawdown'])
-                        mlflow.log_metric('backtest_total_pnl', bt_results['total_pnl'])
-                        mlflow.log_metric('backtest_total_return', bt_results['total_return'])
-                        
-                        # Save trade log and equity curve to MLflow
-                        if cfg.backtest.logs.get('save_trades', True) and len(bt_results['trade_log']) > 0:
-                            trade_log_path = Path('backtest_trade_log.csv')
-                            bt_results['trade_log'].to_csv(trade_log_path, index=False)
-                            mlflow.log_artifact(str(trade_log_path))
-                        
-                        if cfg.backtest.logs.get('save_equity', True) and len(bt_results['equity_curve']) > 0:
-                            equity_path = Path('backtest_equity_curve.csv')
-                            bt_results['equity_curve'].to_csv(equity_path, index=False)
-                            mlflow.log_artifact(str(equity_path))
-                        
-                        logger.info("Backtesting completed successfully")
-                    except Exception as e:
-                        logger.error(f"Backtesting failed: {e}", exc_info=True)
+                        try:
+                            bt_results = run_backtest(
+                                bars=backtest_bars_aligned,
+                                predictions=backtest_predictions_aligned,
+                                session_calendar=calendar,
+                                config=dict(cfg.backtest),
+                                labeling_config=dict(cfg.labeling.triple_barrier),
+                                assets_config=dict(cfg.assets)
+                            )
+                            
+                            # Log backtest metrics to MLflow
+                            mlflow.log_metric('backtest_total_trades', bt_results['total_trades'])
+                            mlflow.log_metric('backtest_win_rate', bt_results['win_rate'])
+                            mlflow.log_metric('backtest_sharpe_ratio', bt_results['sharpe_ratio'])
+                            mlflow.log_metric('backtest_max_drawdown', bt_results['max_drawdown'])
+                            mlflow.log_metric('backtest_total_pnl', bt_results['total_pnl'])
+                            mlflow.log_metric('backtest_total_return', bt_results['total_return'])
+                            mlflow.log_param('backtest_data_file', backtest_data_file)
+                            
+                            # Save trade log and equity curve to MLflow
+                            if cfg.backtest.logs.get('save_trades', True) and len(bt_results['trade_log']) > 0:
+                                trade_log_path = Path('backtest_trade_log.csv')
+                                bt_results['trade_log'].to_csv(trade_log_path, index=False)
+                                mlflow.log_artifact(str(trade_log_path))
+                            
+                            if cfg.backtest.logs.get('save_equity', True) and len(bt_results['equity_curve']) > 0:
+                                equity_path = Path('backtest_equity_curve.csv')
+                                bt_results['equity_curve'].to_csv(equity_path, index=False)
+                                mlflow.log_artifact(str(equity_path))
+                            
+                            logger.info("Out-of-sample backtesting completed successfully")
+                        except Exception as e:
+                            logger.error(f"Backtesting failed: {e}", exc_info=True)
+                            bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+                    else:
+                        logger.warning("No aligned data for out-of-sample backtesting, skipping")
                         bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
                 else:
-                    logger.warning("No aligned data for backtesting, skipping")
+                    logger.warning("No models available for out-of-sample backtesting, skipping")
                     bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
             else:
-                logger.warning("No models available for backtesting, skipping")
-                bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+                # Original behavior: backtest on same data as training
+                # Prepare predictions for backtesting
+                # We'll use the last trained primary model and meta model (if available)
+                if len(X) > 0 and primary_models:
+                    logger.info("Preparing predictions for backtesting (in-sample)")
+                    
+                    # Use the last primary model for predictions
+                    last_primary_model = primary_models[-1]
+                    
+                    # Get primary model predictions on full dataset
+                    primary_predictions = last_primary_model.predict(X)
+                    primary_proba = last_primary_model.predict_proba(X)
+                    
+                    # Get probability of class +1
+                    classes = last_primary_model.model.classes_
+                    if len(classes) == 2:
+                        pos_class_idx = np.where(classes == 1)[0]
+                        if len(pos_class_idx) > 0:
+                            primary_proba_pos = primary_proba[:, pos_class_idx[0]]
+                        else:
+                            primary_proba_pos = primary_proba[:, 1] if primary_proba.shape[1] > 1 else primary_proba[:, 0]
+                    else:
+                        primary_proba_pos = primary_proba[:, 0]
+                    
+                    # Create predictions DataFrame
+                    predictions_df = pd.DataFrame({
+                        'prediction': primary_predictions,
+                        'probability': primary_proba_pos,
+                    }, index=X.index)
+                    
+                    # Add meta-model predictions if available
+                    # For now, we'll use a simple threshold on primary probability
+                    # In a full implementation, we'd use the trained meta-model
+                    if cfg.models.meta_model.get('enabled', False):
+                        # Meta decision: 1 if probability > threshold, 0 otherwise
+                        meta_threshold = cfg.backtest.get('meta_model', {}).get('threshold', 0.5)
+                        predictions_df['meta_decision'] = (primary_proba_pos >= meta_threshold).astype(int)
+                        logger.info(f"Meta-model filtering enabled: threshold={meta_threshold}")
+                    else:
+                        predictions_df['meta_decision'] = 1  # Take all trades
+                    
+                    # Align bars with predictions (use common timestamps)
+                    bars_for_backtest = bars.loc[bars.index.intersection(predictions_df.index)]
+                    predictions_aligned = predictions_df.loc[bars_for_backtest.index]
+                    
+                    if len(bars_for_backtest) > 0 and len(predictions_aligned) > 0:
+                        logger.info(f"Running backtest on {len(bars_for_backtest)} bars with {len(predictions_aligned)} predictions")
+                        
+                        try:
+                            bt_results = run_backtest(
+                                bars=bars_for_backtest,
+                                predictions=predictions_aligned,
+                                session_calendar=calendar,
+                                config=dict(cfg.backtest),
+                                labeling_config=dict(cfg.labeling.triple_barrier),
+                                assets_config=dict(cfg.assets)
+                            )
+                            
+                            # Log backtest metrics to MLflow
+                            mlflow.log_metric('backtest_total_trades', bt_results['total_trades'])
+                            mlflow.log_metric('backtest_win_rate', bt_results['win_rate'])
+                            mlflow.log_metric('backtest_sharpe_ratio', bt_results['sharpe_ratio'])
+                            mlflow.log_metric('backtest_max_drawdown', bt_results['max_drawdown'])
+                            mlflow.log_metric('backtest_total_pnl', bt_results['total_pnl'])
+                            mlflow.log_metric('backtest_total_return', bt_results['total_return'])
+                            
+                            # Save trade log and equity curve to MLflow
+                            if cfg.backtest.logs.get('save_trades', True) and len(bt_results['trade_log']) > 0:
+                                trade_log_path = Path('backtest_trade_log.csv')
+                                bt_results['trade_log'].to_csv(trade_log_path, index=False)
+                                mlflow.log_artifact(str(trade_log_path))
+                            
+                            if cfg.backtest.logs.get('save_equity', True) and len(bt_results['equity_curve']) > 0:
+                                equity_path = Path('backtest_equity_curve.csv')
+                                bt_results['equity_curve'].to_csv(equity_path, index=False)
+                                mlflow.log_artifact(str(equity_path))
+                            
+                            logger.info("Backtesting completed successfully")
+                        except Exception as e:
+                            logger.error(f"Backtesting failed: {e}", exc_info=True)
+                            bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+                    else:
+                        logger.warning("No aligned data for backtesting, skipping")
+                        bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+                else:
+                    logger.warning("No models available for backtesting, skipping")
+                    bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
         else:
             logger.info("Backtesting disabled in config")
             bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
