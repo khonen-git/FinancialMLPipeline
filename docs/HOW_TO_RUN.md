@@ -19,7 +19,7 @@ It is written for both **you** and **AI assistants**.
 Create and activate the conda environment (or equivalent):
 
 ```bash
-conda env create -f environment.yml
+conda env create -f environment.yaml
 conda activate financial-ml
 ```
 
@@ -35,7 +35,7 @@ The environment should include at least:
 - jinja2
 - (optional) cudf / cuml for GPU
 
-Check that the package versions match the project's `environment.yml`.
+Check that the package versions match the project's `environment.yaml`.
 
 ### 1.2 Project Structure
 
@@ -288,7 +288,7 @@ python scripts/run_experiment.py \
 
 If you want a perfect reproduction, ensure that:
 
-- the environment matches (`environment.yml` or `pip freeze` logged),
+- the environment matches (`environment.yaml` or `pip freeze` logged),
 - the data files are identical (same clean Parquet, same path).
 
 ---
