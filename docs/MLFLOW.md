@@ -35,7 +35,7 @@ The default configuration uses local file-based tracking:
 mlflow:
   enabled: true
   tracking_uri: "file:./mlruns"
-  experiment_name: "trading_ml"
+  experiment_name: "financial_ml"
   autolog: false
   
   log_artifacts:
@@ -46,7 +46,7 @@ mlflow:
     models: true
   
   tags:
-    project: "trading-ml-pipeline"
+    project: "financial-ml-pipeline"
 ```
 
 **Key settings**:
@@ -64,7 +64,7 @@ For team collaboration or cloud deployment, you can use a remote tracking server
 mlflow:
   enabled: true
   tracking_uri: "http://your-mlflow-server:5000"
-  experiment_name: "trading_ml"
+  experiment_name: "financial_ml"
   autolog: false
 ```
 

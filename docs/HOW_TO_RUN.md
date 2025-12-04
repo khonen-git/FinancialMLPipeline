@@ -20,7 +20,7 @@ Create and activate the conda environment (or equivalent):
 
 ```bash
 conda env create -f environment.yml
-conda activate trading-ml
+conda activate financial-ml
 ```
 
 The environment should include at least:
@@ -42,7 +42,7 @@ Check that the package versions match the project's `environment.yml`.
 At minimum, the repo should look like:
 
 ```
-trading-ml-pipeline/
+financial-ml-pipeline/
   configs/
   src/
   data/

@@ -28,7 +28,7 @@ Built for raw spread accounts with strict **no overnight positions** constraint.
 ```bash
 # Create conda environment
 conda env create -f environment.yml
-conda activate trading-ml
+conda activate financial-ml
 
 # Install project
 pip install -e .

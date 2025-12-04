@@ -1,4 +1,4 @@
-name: trading-ml
+name: financial-ml
 channels:
   - conda-forge
   - defaults

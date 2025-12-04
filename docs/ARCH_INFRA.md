@@ -10,7 +10,7 @@ It is designed so both humans and AI assistants can understand the entire projec
 
 ```mermaid
 flowchart TD
-    ROOT["trading-ml-pipeline/"]
+    ROOT["financial-ml-pipeline/"]
     subgraph ROOT_DIR["project root"]
         SRC["src/"]
         CONFIGS["configs/"]
@@ -263,7 +263,7 @@ Later, a CI pipeline (GitHub Actions recommended) may:
 Recommended conda environment:
 
 ```yaml
-name: trading-ml
+name: financial-ml
 dependencies:
   - python=3.12
   - pandas

@@ -548,7 +548,7 @@ reporting:
 mlflow:
   enabled: true
   tracking_uri: "file:./mlruns"
-  experiment_name: "trading_ml"
+  experiment_name: "financial_ml"
   autolog: false
 
   log_artifacts:
@@ -559,7 +559,7 @@ mlflow:
     models: true
 
   tags:
-    project: "trading-ml-pipeline"
+    project: "financial-ml-pipeline"
 ```
 
 **Notes**:

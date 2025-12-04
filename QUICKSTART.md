@@ -6,7 +6,7 @@
 
 ```bash
 conda env create -f environment.yml
-conda activate trading-ml
+conda activate financial-ml
 ```
 
 ### 2. Install package
