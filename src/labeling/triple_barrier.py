@@ -16,6 +16,7 @@ import logging
 from typing import Optional
 
 import pandas as pd
+import numpy as np
 
 from .session_calendar import SessionCalendar
 from ..utils.helpers import convert_ticks_to_price
@@ -81,9 +82,12 @@ def compute_triple_barrier(
     results = []
     skipped_count = 0
     
-    for idx, event in events.iterrows():
-        t0 = event['timestamp']
-        bar_idx_start = event['bar_index']
+    # Convert events to numpy arrays for faster iteration (avoid iterrows())
+    # Use itertuples() which is much faster than iterrows()
+    for event_tuple in events.itertuples():
+        # Access attributes from namedtuple (faster than dict access)
+        t0 = event_tuple.timestamp
+        bar_idx_start = event_tuple.bar_index
         
         # Effective horizon based exclusively on the SessionCalendar
         bars_to_session_end = session_calendar.bars_until_session_end(
@@ -113,36 +117,44 @@ def compute_triple_barrier(
         # Scan forward up to effective_horizon_bars
         end_bar_idx = min(bar_idx_start + effective_horizon_bars, len(prices) - 1)
         
-        # Future prices slice
-        future_prices = prices.iloc[bar_idx_start + 1 : end_bar_idx + 1]
+        # Future prices slice - use numpy arrays for faster access
+        start_slice = bar_idx_start + 1
+        end_slice = end_bar_idx + 1
         
-        if len(future_prices) == 0:
+        if start_slice >= end_slice or end_slice > len(prices):
             # No future data available
             skipped_count += 1
             continue
         
-        # Scan forward to find the first barrier hit
-        label = 0
-        barrier_hit = 'time'
-        exit_bar_idx = end_bar_idx
-
-        for i, (_, row) in enumerate(future_prices.iterrows()):
-            bar_position = bar_idx_start + 1 + i
-            bid_high = row['bid_high']
-            bid_low = row['bid_low']
-
-            # TP has priority if TP and SL hit in the same bar
-            if bid_high >= tp_level:
-                label = 1
-                barrier_hit = 'tp'
-                exit_bar_idx = bar_position
-                break
-
-            if bid_low <= sl_level:
-                label = -1
-                barrier_hit = 'sl'
-                exit_bar_idx = bar_position
-                break
+        # Extract numpy arrays for vectorized operations (much faster than iterrows)
+        bid_highs = prices['bid_high'].iloc[start_slice:end_slice].values
+        bid_lows = prices['bid_low'].iloc[start_slice:end_slice].values
+        
+        # Vectorized barrier check: find first index where TP or SL is hit
+        # TP has priority: check TP first, then SL
+        tp_hits = bid_highs >= tp_level
+        sl_hits = bid_lows <= sl_level
+        
+        # Find first hit (TP takes priority)
+        tp_first_idx = np.argmax(tp_hits) if tp_hits.any() else -1
+        sl_first_idx = np.argmax(sl_hits) if sl_hits.any() else -1
+        
+        # Determine which barrier was hit first
+        if tp_first_idx >= 0 and (sl_first_idx < 0 or tp_first_idx <= sl_first_idx):
+            # TP hit first (or only TP hit)
+            label = 1
+            barrier_hit = 'tp'
+            exit_bar_idx = start_slice + tp_first_idx
+        elif sl_first_idx >= 0:
+            # SL hit (and TP didn't hit first)
+            label = -1
+            barrier_hit = 'sl'
+            exit_bar_idx = start_slice + sl_first_idx
+        else:
+            # Time barrier
+            label = 0
+            barrier_hit = 'time'
+            exit_bar_idx = end_bar_idx
         
         # Exit always at bid
         exit_price = prices.iloc[exit_bar_idx]['bid_close']
