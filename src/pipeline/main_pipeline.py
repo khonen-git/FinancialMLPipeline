@@ -21,6 +21,7 @@ from pathlib import Path
 import mlflow
 
 from src.utils.logging_config import setup_logging
+from src.utils.feature_validation import validate_features, validate_feature_consistency
 from src.data.schema_detection import SchemaDetector
 from src.data.bars import BarBuilder
 from src.labeling.session_calendar import SessionCalendar
@@ -62,13 +63,19 @@ def run_pipeline(cfg: DictConfig):
     mlflow.set_experiment(cfg.experiment.name)
     
     with mlflow.start_run():
-        # Log config
+        # Log basic config (TP/SL will be logged later based on distance_mode)
         mlflow.log_params({
             'asset': cfg.assets.symbol,
             'bars_type': cfg.data.bars.type,
-            'tp_ticks': cfg.labeling.triple_barrier.tp_ticks,
-            'sl_ticks': cfg.labeling.triple_barrier.sl_ticks
+            'distance_mode': cfg.labeling.triple_barrier.get('distance_mode', 'ticks')
         })
+        
+        # Log TP/SL from config if using 'ticks' mode
+        if cfg.labeling.triple_barrier.get('distance_mode', 'ticks') == 'ticks':
+            mlflow.log_params({
+                'tp_ticks': cfg.labeling.triple_barrier.get('tp_ticks', 0),
+                'sl_ticks': cfg.labeling.triple_barrier.get('sl_ticks', 0)
+            })
         
         # Step 1: Load data
         logger.info("Step 1: Loading data")
@@ -134,6 +141,14 @@ def run_pipeline(cfg: DictConfig):
             ma_cross_features
         ], axis=1)
         logger.info(f"Created {len(all_features.columns)} total features")
+        
+        # Step 5b: Data leakage audit (only in debug mode or first run)
+        if cfg.experiment.get('audit_data_leakage', False):
+            logger.info("Step 5b: Auditing feature engineering for data leakage")
+            leakage_audit = audit_feature_engineering_pipeline()
+            if not leakage_audit['is_safe']:
+                logger.warning("Data leakage audit found potential issues - review feature engineering")
+            mlflow.log_param('data_leakage_audit_safe', leakage_audit['is_safe'])
         
         # MFE/MAE should NOT be used as features (data leakage - uses future data)
         # It should only be used for TP/SL parameter selection
@@ -273,6 +288,22 @@ def run_pipeline(cfg: DictConfig):
         
         logger.info(f"Final dataset: {len(X)} samples, {len(X.columns)} features")
         
+        # Step 8b: Validate features before training
+        logger.info("Step 8b: Validating features")
+        if len(X) > 0:
+            validation_results = validate_features(
+                X, y=y, name="training features", strict=True
+            )
+            mlflow.log_metric('n_features_validated', validation_results['n_features'])
+            mlflow.log_metric('n_nan_features', validation_results['n_nan'])
+            mlflow.log_metric('n_inf_features', validation_results['n_inf'])
+            mlflow.log_metric('n_constant_features', len(validation_results['constant_features']))
+            
+            if not validation_results['is_valid']:
+                raise ValueError(f"Feature validation failed: {validation_results['errors']}")
+        else:
+            logger.warning("Skipping feature validation: empty feature matrix")
+        
         # Step 9: Cross-validation setup
         if 'cv_type' not in cfg.validation:
             raise ValueError("Missing required config: validation.cv_type")
@@ -338,6 +369,21 @@ def run_pipeline(cfg: DictConfig):
                 
                 X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
                 y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+                
+                # Validate feature consistency between train and test
+                if fold == 0:  # Only check once to avoid log spam
+                    consistency_results = validate_feature_consistency(
+                        X_train, X_test, name_train=f"fold_{fold}_train", name_test=f"fold_{fold}_test"
+                    )
+                    if not consistency_results['is_consistent']:
+                        logger.error(f"Feature consistency check failed in fold {fold}")
+                        # Don't raise error, but log it - this is a warning
+                
+                # Validate test features
+                if len(X_test) > 0:
+                    test_validation = validate_features(
+                        X_test, y=y_test, name=f"fold_{fold}_test", strict=False
+                    )
                 
                 # Train Primary Model (direction: 1 vs -1)
                 primary_model = RandomForestCPU(cfg.models.random_forest)
@@ -411,8 +457,20 @@ def run_pipeline(cfg: DictConfig):
                 if primary_models:
                     last_primary_model = primary_models[-1]
                     # Get primary model probabilities for all samples
-                    # Note: We need to align with the complete dataset
-                    X_all = dataset_all[all_features.columns]
+                    # CRITICAL: Use the same feature columns as during training
+                    # X was created by dropping label columns from dataset, so we need to
+                    # replicate that same logic for dataset_all
+                    label_cols = ['label', 'pnl', 'barrier_hit', 'event_start', 'event_end', 'bar_index_start', 'bar_index_end']
+                    # Get feature columns by excluding label columns and any other non-feature columns
+                    feature_cols = [col for col in dataset_all.columns if col not in label_cols and col in all_features.columns]
+                    # Ensure we use the exact same columns as X (from training)
+                    # If X.columns is available, use it; otherwise use feature_cols
+                    if len(X.columns) > 0:
+                        # Use only columns that exist in both X and dataset_all
+                        X_all_cols = [col for col in X.columns if col in dataset_all.columns]
+                        X_all = dataset_all[X_all_cols]
+                    else:
+                        X_all = dataset_all[feature_cols]
                     
                     # Get probabilities for class +1 (TP)
                     primary_proba = last_primary_model.predict_proba(X_all)
@@ -564,6 +622,21 @@ def run_pipeline(cfg: DictConfig):
                 if primary_models:
                     last_primary_model = primary_models[-1]
                     backtest_X = backtest_all_features[all_features.columns].dropna()
+                    
+                    # Validate backtest features consistency with training
+                    logger.info("Validating backtest features consistency")
+                    backtest_consistency = validate_feature_consistency(
+                        X, backtest_X, name_train="training", name_test="backtest"
+                    )
+                    if not backtest_consistency['is_consistent']:
+                        logger.error("Backtest features are inconsistent with training features!")
+                        # This is critical - raise error
+                        raise ValueError(f"Backtest feature inconsistency: {backtest_consistency['errors']}")
+                    
+                    # Validate backtest features quality
+                    backtest_validation = validate_features(
+                        backtest_X, name="backtest features", strict=False
+                    )
                     
                     logger.info(f"Generating predictions on {len(backtest_X)} backtest samples")
                     backtest_primary_predictions = last_primary_model.predict(backtest_X)
