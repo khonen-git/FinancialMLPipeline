@@ -34,7 +34,7 @@ def create_backtrader_feed(bars: pd.DataFrame) -> PandasDataBidAsk:
     """Create Backtrader data feed from bars DataFrame.
     
     Args:
-        bars: DataFrame with bid/ask OHLC
+        bars: DataFrame with bid/ask OHLC and optional prediction columns
         
     Returns:
         PandasDataBidAsk feed
@@ -52,8 +52,19 @@ def create_backtrader_feed(bars: pd.DataFrame) -> PandasDataBidAsk:
     if 'volume' not in bars.columns:
         bars['volume'] = 0
     
+    # Store predictions separately (they'll be accessed by strategy)
+    # Backtrader data feeds don't easily support custom columns
+    # We'll store them in the feed's params for strategy access
+    predictions = None
+    if 'prediction' in bars.columns:
+        predictions = bars[['prediction', 'probability', 'meta_decision']].copy() if 'probability' in bars.columns else bars[['prediction']].copy()
+    
     # Create feed
     data = PandasDataBidAsk(dataname=bars)
+    
+    # Store predictions as custom attribute (strategy will access via data feed)
+    if predictions is not None:
+        data.predictions = predictions
     
     return data
 

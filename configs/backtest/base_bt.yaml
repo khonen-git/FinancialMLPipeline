@@ -1,28 +1,42 @@
 # Backtrader backtest configuration
+# Aligned with BACKTESTING.md architecture
 
 backtest:
+  enabled: true  # Enable/disable backtesting
   engine: "backtrader"
   
+  # Position sizing
   sizing:
-    mode: "fixed"
-    size: 1.0  # in lots or units
+    mode: "fixed"  # fixed | risk_based | kelly (future)
+    size: 1.0  # in lots or units (for fixed mode)
   
+  # Commission (raw spread account, commission included in spread)
   commission:
-    type: "per_lot"
-    value: 0.0  # raw spread account, commission included in spread
+    type: "per_lot"  # per_lot | percentage
+    value: 0.0  # raw spread account, no separate commission
   
+  # Slippage (optional, disabled by default for v1)
   slippage:
     enabled: false  # can be turned on later
-    model: "none"  # none | fixed | proportional
-    fixed_slippage_ticks: 1.0
+    model: "fixed"  # none | fixed | proportional
+    fixed_slippage_ticks: 0.0  # slippage in ticks
   
-  position_sizing:
-    use_risk_model: true  # read from capital/risk_model config
+  # Meta-model integration
+  meta_model:
+    enabled: true  # Use meta-model to filter trades
+    threshold: 0.5  # Minimum meta-model probability to take trade
   
+  # Initial capital
+  capital:
+    initial: 10000.0  # Starting capital
+  
+  # Session management
   session:
-    use_session_calendar: true
+    use_session_calendar: true  # Use SessionCalendar for no-overnight rules
   
+  # Logging and outputs
   logs:
-    save_trades: true
-    save_equity: true
-
+    save_trades: true  # Save trade log to CSV
+    save_equity: true  # Save equity curve to CSV
+    save_daily_stats: true  # Save daily statistics
+    save_plots: true  # Generate and save plots (equity, drawdown, etc.)

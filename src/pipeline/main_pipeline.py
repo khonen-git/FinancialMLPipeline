@@ -35,8 +35,7 @@ from src.models.hmm_micro import MicroHMM
 from src.models.rf_cpu import RandomForestCPU
 from src.validation.tscv import TimeSeriesCV
 from src.validation.cpcv import CombinatorialPurgedCV
-from src.backtest.backtrader_strategy import SessionAwareStrategy
-from src.backtest.data_feed import create_backtrader_feed
+from src.backtest.runner import run_backtest
 from src.risk.monte_carlo import run_monte_carlo_simulation, analyze_prop_firm_constraints
 from src.reporting.report_generator import ReportGenerator
 
@@ -503,10 +502,101 @@ def run_pipeline(cfg: DictConfig):
         else:
             logger.warning("Cannot prepare meta-labeling dataset, skipping")
         
-        # Step 11: Backtesting (simplified placeholder)
+        # Step 11: Backtesting
         logger.info("Step 11: Backtesting")
-        # bt_results = run_backtest(bars, y_pred, cfg.backtest)
-        bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+        bt_results = None
+        
+        # Check if backtesting is enabled
+        if cfg.backtest.get('enabled', True):
+            # Prepare predictions for backtesting
+            # We'll use the last trained primary model and meta model (if available)
+            if len(X) > 0 and primary_models:
+                logger.info("Preparing predictions for backtesting")
+                
+                # Use the last primary model for predictions
+                last_primary_model = primary_models[-1]
+                
+                # Get primary model predictions on full dataset
+                primary_predictions = last_primary_model.predict(X)
+                primary_proba = last_primary_model.predict_proba(X)
+                
+                # Get probability of class +1
+                classes = last_primary_model.model.classes_
+                if len(classes) == 2:
+                    pos_class_idx = np.where(classes == 1)[0]
+                    if len(pos_class_idx) > 0:
+                        primary_proba_pos = primary_proba[:, pos_class_idx[0]]
+                    else:
+                        primary_proba_pos = primary_proba[:, 1] if primary_proba.shape[1] > 1 else primary_proba[:, 0]
+                else:
+                    primary_proba_pos = primary_proba[:, 0]
+                
+                # Create predictions DataFrame
+                predictions_df = pd.DataFrame({
+                    'prediction': primary_predictions,
+                    'probability': primary_proba_pos,
+                }, index=X.index)
+                
+                # Add meta-model predictions if available
+                # For now, we'll use a simple threshold on primary probability
+                # In a full implementation, we'd use the trained meta-model
+                if cfg.models.meta_model.get('enabled', False):
+                    # Meta decision: 1 if probability > threshold, 0 otherwise
+                    meta_threshold = cfg.backtest.get('meta_model', {}).get('threshold', 0.5)
+                    predictions_df['meta_decision'] = (primary_proba_pos >= meta_threshold).astype(int)
+                    logger.info(f"Meta-model filtering enabled: threshold={meta_threshold}")
+                else:
+                    predictions_df['meta_decision'] = 1  # Take all trades
+                
+                # Align bars with predictions (use common timestamps)
+                bars_for_backtest = bars.loc[bars.index.intersection(predictions_df.index)]
+                predictions_aligned = predictions_df.loc[bars_for_backtest.index]
+                
+                if len(bars_for_backtest) > 0 and len(predictions_aligned) > 0:
+                    logger.info(f"Running backtest on {len(bars_for_backtest)} bars with {len(predictions_aligned)} predictions")
+                    
+                    try:
+                        bt_results = run_backtest(
+                            bars=bars_for_backtest,
+                            predictions=predictions_aligned,
+                            session_calendar=calendar,
+                            config=dict(cfg.backtest),
+                            labeling_config=dict(cfg.labeling.triple_barrier),
+                            assets_config=dict(cfg.assets)
+                        )
+                        
+                        # Log backtest metrics to MLflow
+                        mlflow.log_metric('backtest_total_trades', bt_results['total_trades'])
+                        mlflow.log_metric('backtest_win_rate', bt_results['win_rate'])
+                        mlflow.log_metric('backtest_sharpe_ratio', bt_results['sharpe_ratio'])
+                        mlflow.log_metric('backtest_max_drawdown', bt_results['max_drawdown'])
+                        mlflow.log_metric('backtest_total_pnl', bt_results['total_pnl'])
+                        mlflow.log_metric('backtest_total_return', bt_results['total_return'])
+                        
+                        # Save trade log and equity curve to MLflow
+                        if cfg.backtest.logs.get('save_trades', True) and len(bt_results['trade_log']) > 0:
+                            trade_log_path = Path('backtest_trade_log.csv')
+                            bt_results['trade_log'].to_csv(trade_log_path, index=False)
+                            mlflow.log_artifact(str(trade_log_path))
+                        
+                        if cfg.backtest.logs.get('save_equity', True) and len(bt_results['equity_curve']) > 0:
+                            equity_path = Path('backtest_equity_curve.csv')
+                            bt_results['equity_curve'].to_csv(equity_path, index=False)
+                            mlflow.log_artifact(str(equity_path))
+                        
+                        logger.info("Backtesting completed successfully")
+                    except Exception as e:
+                        logger.error(f"Backtesting failed: {e}", exc_info=True)
+                        bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+                else:
+                    logger.warning("No aligned data for backtesting, skipping")
+                    bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+            else:
+                logger.warning("No models available for backtesting, skipping")
+                bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+        else:
+            logger.info("Backtesting disabled in config")
+            bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
         
         # Step 12: Risk analysis
         logger.info("Step 12: Risk analysis")
@@ -532,7 +622,7 @@ def run_pipeline(cfg: DictConfig):
                 'f1': 0,
                 'auc': 0
             },
-            'backtest': bt_results,
+            'backtest': bt_results if bt_results else {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0},
             'risk': mc_results
         }
         
