@@ -13,6 +13,8 @@ Orchestrates:
 """
 
 import logging
+import io
+from typing import Optional, Dict, Any, Tuple
 import hydra
 from omegaconf import DictConfig
 import pandas as pd
@@ -44,20 +46,15 @@ logger = logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="config")
-def run_pipeline(cfg: DictConfig):
+def run_pipeline(cfg: DictConfig) -> None:
     """Run full ML pipeline.
     
     Args:
         cfg: Hydra configuration
     """
     log_level = cfg.runtime.get('log_level', 'INFO') if 'runtime' in cfg else 'INFO'
-    setup_logging(log_level)
     
-    logger.info("=" * 80)
-    logger.info(f"Starting pipeline: {cfg.experiment.name}")
-    logger.info("=" * 80)
-    
-    # Setup MLflow
+    # Setup MLflow first to get tracking URI
     if 'mlflow' not in cfg or 'tracking_uri' not in cfg.mlflow:
         logger.warning("MLflow config not found or incomplete, using default local tracking")
         tracking_uri = 'file:./mlruns'
@@ -68,6 +65,13 @@ def run_pipeline(cfg: DictConfig):
     
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)
+    
+    # Setup logging with MLflow handler (logs will be saved to MLflow artifacts)
+    mlflow_log_handler = setup_logging(log_level, mlflow_log_handler=None)
+    
+    logger.info("=" * 80)
+    logger.info(f"Starting pipeline: {cfg.experiment.name}")
+    logger.info("=" * 80)
     
     with mlflow.start_run():
         # Log basic config (TP/SL will be logged later based on distance_mode)
@@ -102,6 +106,9 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 6: HMM regime detection (optional)
         logger.info("Step 6: HMM regime detection")
+        macro_hmm: Optional[MacroHMM] = None
+        micro_hmm: Optional[MicroHMM] = None
+        
         if cfg.models.get('hmm', {}).get('macro', {}).get('enabled', False):
             logger.info("Training Macro HMM")
             from src.models.hmm_macro import MacroHMM
@@ -264,6 +271,7 @@ def run_pipeline(cfg: DictConfig):
         accuracy = 0.0  # Initialize
         accuracies = []
         primary_models = []  # Store models for meta-labeling
+        meta_models = []  # Store meta-models for backtesting
         
         if len(X) > 0:
             # Pass label_indices to enable advanced purging
@@ -428,6 +436,7 @@ def run_pipeline(cfg: DictConfig):
                             # Train Meta Model
                             meta_model = RandomForestCPU(cfg.models.model)
                             meta_model.fit(X_meta_train, y_meta_train)
+                            meta_models.append(meta_model)  # Store for backtesting
                             
                             # Evaluate Meta Model
                             y_meta_pred = meta_model.predict(X_meta_test)
@@ -519,8 +528,20 @@ def run_pipeline(cfg: DictConfig):
                     backtest_ma_cross_features
                 ], axis=1)
                 
-                # Add HMM regimes if enabled (would need to predict on backtest data)
-                # For now, skip HMM for backtest data
+                # Add HMM regimes if enabled (predict on backtest data)
+                if macro_hmm is not None:
+                    logger.info("Predicting Macro HMM regimes on backtest data")
+                    from src.features.hmm_features import create_macro_hmm_features
+                    backtest_macro_features = create_macro_hmm_features(backtest_bars, cfg.models.hmm.macro)
+                    backtest_macro_regimes = macro_hmm.predict(backtest_macro_features)
+                    backtest_all_features['macro_regime'] = backtest_macro_regimes
+                
+                if micro_hmm is not None:
+                    logger.info("Predicting Micro HMM regimes on backtest data")
+                    from src.features.hmm_features import create_micro_hmm_features
+                    backtest_micro_features_hmm = create_micro_hmm_features(backtest_bars, backtest_ticks, cfg.models.hmm.micro)
+                    backtest_micro_regimes = micro_hmm.predict(backtest_micro_features_hmm)
+                    backtest_all_features['micro_regime'] = backtest_micro_regimes
                 
                 # Prepare backtest dataset (drop NaN)
                 backtest_all_features = backtest_all_features.dropna()
@@ -588,13 +609,22 @@ def run_pipeline(cfg: DictConfig):
                     }, index=backtest_X.index)
                     
                     # Add meta-model predictions if available
-                    # TODO: Use trained meta-model instead of simple threshold
-                    if cfg.models.meta_model.get('enabled', False):
-                        meta_threshold = cfg.backtest.get('meta_model', {}).get('threshold', 0.5)
-                        backtest_predictions_df['meta_decision'] = (backtest_primary_proba_pos >= meta_threshold).astype(int)
-                        logger.info(f"Meta-model filtering enabled: threshold={meta_threshold}")
+                    if cfg.models.meta_model.get('enabled', False) and meta_models:
+                        logger.info("Using trained meta-model for backtest filtering")
+                        last_meta_model = meta_models[-1]
+                        
+                        # Prepare meta-features: base features + primary model probabilities
+                        backtest_meta_features = backtest_X.copy()
+                        backtest_meta_features['primary_proba'] = backtest_primary_proba_pos
+                        
+                        # Get meta-model predictions
+                        backtest_meta_predictions = last_meta_model.predict(backtest_meta_features)
+                        backtest_predictions_df['meta_decision'] = backtest_meta_predictions
+                        logger.info(f"Meta-model filtering: {backtest_meta_predictions.sum()}/{len(backtest_meta_predictions)} trades approved")
                     else:
                         backtest_predictions_df['meta_decision'] = 1
+                        if cfg.models.meta_model.get('enabled', False):
+                            logger.warning("Meta-model enabled but no trained models available, taking all trades")
                     
                     # Align backtest bars with predictions
                     backtest_bars_aligned = backtest_bars.loc[backtest_bars.index.intersection(backtest_predictions_df.index)]
@@ -675,15 +705,22 @@ def run_pipeline(cfg: DictConfig):
                     }, index=X.index)
                     
                     # Add meta-model predictions if available
-                    # For now, we'll use a simple threshold on primary probability
-                    # In a full implementation, we'd use the trained meta-model
-                    if cfg.models.meta_model.get('enabled', False):
-                        # Meta decision: 1 if probability > threshold, 0 otherwise
-                        meta_threshold = cfg.backtest.get('meta_model', {}).get('threshold', 0.5)
-                        predictions_df['meta_decision'] = (primary_proba_pos >= meta_threshold).astype(int)
-                        logger.info(f"Meta-model filtering enabled: threshold={meta_threshold}")
+                    if cfg.models.meta_model.get('enabled', False) and meta_models:
+                        logger.info("Using trained meta-model for backtest filtering (in-sample)")
+                        last_meta_model = meta_models[-1]
+                        
+                        # Prepare meta-features: base features + primary model probabilities
+                        meta_features_bt = X.copy()
+                        meta_features_bt['primary_proba'] = primary_proba_pos
+                        
+                        # Get meta-model predictions
+                        meta_predictions = last_meta_model.predict(meta_features_bt)
+                        predictions_df['meta_decision'] = meta_predictions
+                        logger.info(f"Meta-model filtering: {meta_predictions.sum()}/{len(meta_predictions)} trades approved")
                     else:
                         predictions_df['meta_decision'] = 1  # Take all trades
+                        if cfg.models.meta_model.get('enabled', False):
+                            logger.warning("Meta-model enabled but no trained models available, taking all trades")
                     
                     # Align bars with predictions (use common timestamps)
                     bars_for_backtest = bars.loc[bars.index.intersection(predictions_df.index)]
@@ -790,6 +827,15 @@ def run_pipeline(cfg: DictConfig):
             logger.info("Reporting disabled in config")
         
         mlflow.log_artifact(str(report_path))
+        
+        # Save logs to MLflow artifacts (as per ARCH_INFRA.md §9)
+        if mlflow_log_handler is not None:
+            log_content = mlflow_log_handler.getvalue()
+            if log_content:
+                log_path = Path('pipeline.log')
+                log_path.write_text(log_content, encoding='utf-8')
+                mlflow.log_artifact(str(log_path))
+                logger.info("Pipeline logs saved to MLflow artifacts")
         
         logger.info("=" * 80)
         logger.info("Pipeline completed successfully!")
