@@ -1,0 +1,120 @@
+# @package _global_
+# Small EURUSD E2E test configuration
+# Complete pipeline with minimal data and reduced complexity
+
+experiment:
+  name: "e2e_small_eurusd"
+  description: "E2E test with small EURUSD dataset - complete pipeline"
+  seed: 42
+  tags: ["e2e", "eurusd", "small", "test"]
+
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.00001
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
+session:
+  timezone: "UTC"
+  session_start: "00:00"
+  session_end: "21:55"
+  friday_end: "20:00"
+  weekend_trading: false
+  labeling:
+    max_horizon_bars: 20
+    min_horizon_bars: 10
+
+data:
+  dukascopy:
+    raw_dir: "data/raw"
+    filename: "EURUSD_2023.csv"
+    format: "csv"
+  bars:
+    type: "tick"
+    threshold: 100
+
+labeling:
+  triple_barrier:
+    distance_mode: "ticks"
+    tp_ticks: 50
+    sl_ticks: 50
+    max_horizon_bars: 20
+    min_horizon_bars: 10
+
+features:
+  returns_lookbacks: [1, 5, 10]
+  volatility_lookbacks: [10, 20]
+  range_lookbacks: [10]
+  spread_stats_lookbacks: [5, 10]
+  order_flow_lookbacks: [5, 10]
+  ma_periods: [5, 10, 20]
+
+models:
+  hmm:
+    macro:
+      enabled: false
+      n_states: 3
+    micro:
+      enabled: false
+      n_states: 3
+  random_forest:
+    params:
+      n_estimators: 100  # Reduced for faster tests
+      max_depth: 8
+      min_samples_leaf: 5
+      n_jobs: 2  # Limited parallelism for tests
+      class_weight: "balanced"
+    calibration:
+      enabled: false
+  meta_model:
+    enabled: true
+    threshold: 0.5
+
+validation:
+  cv_type: "time_series"
+  n_splits: 3  # 3 folds for faster tests
+  test_size: 1500
+  gap: 30
+
+backtest:
+  enabled: true
+  data:
+    filename: "EURUSD_2024.csv"
+    format: "csv"
+  sizing:
+    mode: "fixed"
+    size: 1.0
+  meta_model:
+    enabled: true
+    threshold: 0.5
+  capital:
+    initial: 10000.0
+  logs:
+    save_trades: true
+    save_equity: true
+    save_daily_stats: true
+
+risk:
+  monte_carlo:
+    enabled: true
+    n_sims: 500  # Reduced for faster tests
+  starting_capital: 10000.0
+  max_daily_loss: 0.03
+  max_total_drawdown: 0.2
+
+reporting:
+  enabled: true
+  html:
+    output_path: "outputs/reports"
+
+mlflow:
+  enabled: true
+  tracking_uri: "file:./mlruns"
+  experiment_name: "e2e_small_eurusd"
+
+runtime:
+  log_level: "INFO"
+  gpu_enabled: false
+  profile: false
+
