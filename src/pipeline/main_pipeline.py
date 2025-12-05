@@ -50,7 +50,8 @@ def run_pipeline(cfg: DictConfig):
     Args:
         cfg: Hydra configuration
     """
-    setup_logging(cfg.runtime.log_level)
+    log_level = cfg.runtime.get('log_level', 'INFO') if 'runtime' in cfg else 'INFO'
+    setup_logging(log_level)
     
     logger.info("=" * 80)
     logger.info(f"Starting pipeline: {cfg.experiment.name}")
@@ -58,113 +59,53 @@ def run_pipeline(cfg: DictConfig):
     
     # Setup MLflow
     if 'mlflow' not in cfg or 'tracking_uri' not in cfg.mlflow:
-        raise ValueError("Missing required config: mlflow.tracking_uri")
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.experiment.name)
+        logger.warning("MLflow config not found or incomplete, using default local tracking")
+        tracking_uri = 'file:./mlruns'
+        experiment_name = cfg.experiment.name
+    else:
+        tracking_uri = cfg.mlflow.tracking_uri
+        experiment_name = cfg.mlflow.get('experiment_name', cfg.experiment.name)
+    
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
     
     with mlflow.start_run():
         # Log basic config (TP/SL will be logged later based on distance_mode)
+        asset_symbol = cfg.assets.get('symbol', cfg.assets.get('asset', {}).get('symbol', 'UNKNOWN'))
+        triple_barrier_cfg = cfg.labeling.get('triple_barrier', {}) if 'labeling' in cfg else {}
+        distance_mode = triple_barrier_cfg.get('distance_mode', 'ticks')
+        
         mlflow.log_params({
-            'asset': cfg.assets.symbol,
+            'asset': asset_symbol,
             'bars_type': cfg.data.bars.type,
-            'distance_mode': cfg.labeling.triple_barrier.get('distance_mode', 'ticks')
+            'distance_mode': distance_mode
         })
         
         # Log TP/SL from config if using 'ticks' mode
-        if cfg.labeling.triple_barrier.get('distance_mode', 'ticks') == 'ticks':
+        if distance_mode == 'ticks':
             mlflow.log_params({
-                'tp_ticks': cfg.labeling.triple_barrier.get('tp_ticks', 0),
-                'sl_ticks': cfg.labeling.triple_barrier.get('sl_ticks', 0)
+                'tp_ticks': triple_barrier_cfg.get('tp_ticks', 0),
+                'sl_ticks': triple_barrier_cfg.get('sl_ticks', 0)
             })
         
-        # Step 1: Load data
-        logger.info("Step 1: Loading data")
-        # Require filename in config
-        if 'filename' not in cfg.data.dukascopy:
-            raise ValueError("Missing required config: data.dukascopy.filename")
-        filename = cfg.data.dukascopy.filename
-        data_path = Path(cfg.data.dukascopy.raw_dir) / filename
+        # Step 1-2: Load and clean data
+        from src.pipeline.data_loader import load_and_clean_data
+        ticks = load_and_clean_data(cfg)
         
-        # Require format in config
-        if 'format' not in cfg.data.dukascopy:
-            raise ValueError("Missing required config: data.dukascopy.format")
-        file_format = cfg.data.dukascopy.format
-        if file_format == 'auto':
-            file_format = 'csv' if str(data_path).endswith('.csv') else 'parquet'
-        
-        if file_format == 'csv':
-            logger.info(f"Loading CSV: {data_path}")
-            ticks = pd.read_csv(data_path)
-            # Ensure timestamp column is datetime
-            if 'timestamp' in ticks.columns:
-                ticks['timestamp'] = pd.to_datetime(ticks['timestamp'], unit='ms', utc=True)
-        else:
-            ticks = pd.read_parquet(data_path)
-        
-        logger.info(f"Loaded {len(ticks)} ticks from {data_path}")
-        
-        # Step 2: Schema detection and cleaning (before setting index)
-        logger.info("Step 2: Schema detection and cleaning")
-        detector = SchemaDetector(cfg.data.dukascopy)
-        ticks = detector.validate_and_clean(ticks)
-        
-        # Set timestamp as index after validation
-        if 'timestamp' in ticks.columns:
-            ticks = ticks.set_index('timestamp')
-        
-        # Step 3: Session calendar
-        logger.info("Step 3: Initializing session calendar")
-        calendar = SessionCalendar(cfg.session)
-        
-        # Step 4: Bar construction
-        logger.info("Step 4: Bar construction")
-        bar_builder = BarBuilder(cfg.data.bars)
-        bars = bar_builder.build_bars(ticks)
-        logger.info(f"Built {len(bars)} bars")
+        # Step 3-4: Build bars
+        from src.pipeline.bar_builder import build_bars
+        bars, calendar = build_bars(ticks, cfg)
         
         # Step 5: Feature engineering
-        logger.info("Step 5: Feature engineering")
-        price_features = create_price_features(bars, cfg.features)
-        micro_features = create_microstructure_features(bars, cfg.features)
-        bar_features = create_bar_stats_features(bars, cfg.features)
-        
-        # Add MA slopes features (proven from previous project)
-        from src.features.ma_slopes import create_ma_slope_features, create_ma_cross_features
-        ma_slope_features = create_ma_slope_features(bars, periods=[5, 10, 20, 50])
-        ma_cross_features = create_ma_cross_features(bars)
-        
-        all_features = pd.concat([
-            price_features, 
-            micro_features, 
-            bar_features,
-            ma_slope_features,
-            ma_cross_features
-        ], axis=1)
-        logger.info(f"Created {len(all_features.columns)} total features")
-        
-        # Step 5b: Data leakage audit (only in debug mode or first run)
-        if cfg.experiment.get('audit_data_leakage', False):
-            logger.info("Step 5b: Auditing feature engineering for data leakage")
-            leakage_audit = audit_feature_engineering_pipeline()
-            if not leakage_audit['is_safe']:
-                logger.warning("Data leakage audit found potential issues - review feature engineering")
-            mlflow.log_param('data_leakage_audit_safe', leakage_audit['is_safe'])
-        
-        # MFE/MAE should NOT be used as features (data leakage - uses future data)
-        # It should only be used for TP/SL parameter selection
-        # Check if someone tried to enable it as features and warn them
-        mfe_mae_enabled = cfg.features.get('mfe_mae', {}).get('enabled', False)
-        if mfe_mae_enabled:
-            logger.warning(
-                "⚠️ MFE/MAE features are disabled to prevent data leakage. "
-                "MFE/MAE uses future data and should only be used for TP/SL parameter selection, "
-                "not as model features. Use distance_mode='mfe_mae' in labeling.triple_barrier instead."
-            )
+        from src.pipeline.feature_engineer import engineer_features
+        all_features = engineer_features(bars, cfg)
         
         # Step 6: HMM regime detection (optional)
         logger.info("Step 6: HMM regime detection")
         if cfg.models.get('hmm', {}).get('macro', {}).get('enabled', False):
             logger.info("Training Macro HMM")
+            from src.models.hmm_macro import MacroHMM
+            from src.features.hmm_features import create_macro_hmm_features
             macro_features = create_macro_hmm_features(bars, cfg.models.hmm.macro)
             macro_hmm = MacroHMM(cfg.models.hmm.macro)
             macro_hmm.fit(macro_features)
@@ -175,6 +116,8 @@ def run_pipeline(cfg: DictConfig):
         
         if cfg.models.get('hmm', {}).get('micro', {}).get('enabled', False):
             logger.info("Training Micro HMM")
+            from src.models.hmm_micro import MicroHMM
+            from src.features.hmm_features import create_micro_hmm_features
             micro_features_hmm = create_micro_hmm_features(bars, ticks, cfg.models.hmm.micro)
             micro_hmm = MicroHMM(cfg.models.hmm.micro)
             micro_hmm.fit(micro_features_hmm)
@@ -184,17 +127,10 @@ def run_pipeline(cfg: DictConfig):
             logger.info("Micro HMM disabled - skipping")
         
         # Step 7: Labeling
-        logger.info("Step 7: Triple barrier labeling")
-        # Pass bars and assets config for MFE/MAE mode (if needed)
-        labeler = TripleBarrierLabeler(
-            cfg.labeling.triple_barrier, 
-            calendar,
-            bars=bars,
-            assets_config=dict(cfg.assets)
-        )
-        labels_df = labeler.label_dataset(bars, all_features.index)
+        from src.pipeline.labeler import create_labels
+        labels_df, labels_df_all, labeler = create_labels(bars, all_features, calendar, cfg)
         
-        # Log MFE/MAE parameters if used
+        # Log MFE/MAE parameters if used (from labeler)
         if hasattr(labeler, 'mfe_quantile_val') and labeler.mfe_quantile_val is not None:
             mlflow.log_params({
                 'tp_ticks_mfe_mae': labeler.tp_ticks,
@@ -204,41 +140,8 @@ def run_pipeline(cfg: DictConfig):
                 'mfe_mae_horizon_bars': cfg.labeling.triple_barrier.mfe_mae.horizon_bars
             })
         
-        logger.info(f"Created {len(labels_df)} labels (before filtering)")
-        mlflow.log_metric('n_labels', len(labels_df))
-        
-        # Log label distribution BEFORE filtering
-        if 'label' in labels_df.columns:
-            label_counts = labels_df['label'].value_counts()
-            logger.info(f"Label distribution BEFORE filtering:")
-            for label_val, count in label_counts.items():
-                pct = count / len(labels_df) * 100
-                logger.info(f"  Label {label_val}: {count} ({pct:.1f}%)")
-            mlflow.log_metric('n_labels_tp', label_counts.get(1, 0))
-            mlflow.log_metric('n_labels_sl', label_counts.get(-1, 0))
-            mlflow.log_metric('n_labels_time', label_counts.get(0, 0))
-        
-        # Save complete labels (with label=0) for meta-labeling BEFORE filtering
-        labels_df_all = labels_df.copy()  # Complete labels: 1, 0, -1
-        
-        # DROP label=0 (time barrier) - keep only TP (+1) and SL (-1)
-        # Binary classification for direction prediction only (Primary model)
-        labels_before = len(labels_df)
-        labels_df = labels_df[labels_df['label'] != 0].copy()
-        labels_after = len(labels_df)
-        logger.info(f"Dropped label=0: {labels_before} → {labels_after} ({labels_after/labels_before*100:.1f}% retained)")
-        logger.info(f"Binary classification: +1 (TP) vs -1 (SL) only (Primary model)")
-        logger.info(f"Meta-labeling will use all {len(labels_df_all)} labels (including label=0)")
-        
-        # Log distribution AFTER filtering
-        if len(labels_df) > 0 and 'label' in labels_df.columns:
-            label_counts_after = labels_df['label'].value_counts()
-            logger.info(f"Label distribution AFTER filtering:")
-            for label_val, count in label_counts_after.items():
-                pct = count / len(labels_df) * 100
-                logger.info(f"  Label {label_val}: {count} ({pct:.1f}%)")
-        
-        mlflow.log_metric('n_labels_binary', labels_after)
+        mlflow.log_metric('n_labels', len(labels_df_all))
+        mlflow.log_metric('n_labels_binary', len(labels_df))
         
         # Step 8: Merge features and labels
         logger.info("Step 8: Merging features and labels")
@@ -386,7 +289,7 @@ def run_pipeline(cfg: DictConfig):
                     )
                 
                 # Train Primary Model (direction: 1 vs -1)
-                primary_model = RandomForestCPU(cfg.models.random_forest)
+                primary_model = RandomForestCPU(cfg.models.model)
                 primary_model.fit(X_train, y_train)
                 primary_models.append(primary_model)
                 
@@ -523,7 +426,7 @@ def run_pipeline(cfg: DictConfig):
                             y_meta_test = meta_labels_aligned.iloc[test_idx]
                             
                             # Train Meta Model
-                            meta_model = RandomForestCPU(cfg.models.random_forest)
+                            meta_model = RandomForestCPU(cfg.models.model)
                             meta_model.fit(X_meta_train, y_meta_train)
                             
                             # Evaluate Meta Model
@@ -588,11 +491,15 @@ def run_pipeline(cfg: DictConfig):
                 logger.info(f"Loaded {len(backtest_ticks)} ticks for backtesting from {backtest_data_path}")
                 
                 # Clean backtest data
+                from src.data.schema_detection import SchemaDetector
+                detector = SchemaDetector(cfg.data.dukascopy)
                 backtest_ticks = detector.validate_and_clean(backtest_ticks)
                 if 'timestamp' in backtest_ticks.columns:
                     backtest_ticks = backtest_ticks.set_index('timestamp')
                 
                 # Build bars for backtest
+                from src.data.bars import BarBuilder
+                bar_builder = BarBuilder(cfg.data.bars)
                 backtest_bars = bar_builder.build_bars(backtest_ticks)
                 logger.info(f"Built {len(backtest_bars)} bars for backtesting")
                 
@@ -600,6 +507,7 @@ def run_pipeline(cfg: DictConfig):
                 backtest_price_features = create_price_features(backtest_bars, cfg.features)
                 backtest_micro_features = create_microstructure_features(backtest_bars, cfg.features)
                 backtest_bar_features = create_bar_stats_features(backtest_bars, cfg.features)
+                from src.features.ma_slopes import create_ma_slope_features, create_ma_cross_features
                 backtest_ma_slope_features = create_ma_slope_features(backtest_bars, periods=cfg.features.get('ma_periods', [5, 10, 20, 50]))
                 backtest_ma_cross_features = create_ma_cross_features(backtest_bars)
                 
@@ -829,35 +737,57 @@ def run_pipeline(cfg: DictConfig):
         
         # Step 12: Risk analysis
         logger.info("Step 12: Risk analysis")
-        mc_results = run_monte_carlo_simulation(
-            labels_df[['pnl']],
-            cfg.risk,
-            n_simulations=cfg.risk.mc_simulations
-        )
+        # Get Monte Carlo config (handle different structures)
+        risk_config = cfg.get('risk', {})
+        mc_config = risk_config.get('monte_carlo', {}) if isinstance(risk_config, dict) else {}
+        if hasattr(risk_config, 'monte_carlo'):
+            mc_config = dict(risk_config.monte_carlo)
+        n_sims = mc_config.get('n_sims', 1000) if isinstance(mc_config, dict) else getattr(risk_config.monte_carlo, 'n_sims', 1000) if hasattr(risk_config, 'monte_carlo') else 1000
         
-        mlflow.log_metric('prob_ruin', mc_results['prob_ruin'])
-        mlflow.log_metric('prob_profit_target', mc_results['prob_profit_target'])
+        # Only run if enabled or if we have backtest trades
+        if mc_config.get('enabled', False):
+            # Prepare trade outcomes for Monte Carlo
+            if 'pnl' in labels_df.columns and len(labels_df) > 0:
+                trade_outcomes = labels_df[['pnl']].copy()
+                mc_results = run_monte_carlo_simulation(
+                    trade_outcomes,
+                    risk_config,
+                    n_simulations=n_sims
+                )
+                mlflow.log_metric('prob_ruin', mc_results.get('prob_ruin', 0))
+                mlflow.log_metric('prob_profit_target', mc_results.get('prob_profit_target', 0))
+            else:
+                logger.info("Monte Carlo simulation: no PnL data available, skipping")
+                mc_results = {'prob_ruin': 0, 'prob_profit_target': 0}
+        else:
+            logger.info("Monte Carlo simulation disabled in config")
+            mc_results = {'prob_ruin': 0, 'prob_profit_target': 0}
         
         # Step 13: Generate report
         logger.info("Step 13: Generating report")
-        results = {
-            'n_samples': len(X),
-            'n_features': len(X.columns),
-            'n_labels': len(labels_df),
-            'metrics': {
-                'accuracy': accuracy,
-                'precision': 0,
-                'recall': 0,
-                'f1': 0,
-                'auc': 0
-            },
-            'backtest': bt_results if bt_results else {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0},
-            'risk': mc_results
-        }
-        
-        report_gen = ReportGenerator(Path('templates'))
-        report_path = Path(cfg.reporting.output_dir) / f"{cfg.experiment.name}_report.html"
-        report_gen.generate_report(results, report_path, dict(cfg))
+        reporting_config = cfg.get('reporting', {})
+        if reporting_config.get('enabled', True):
+            results = {
+                'n_samples': len(X),
+                'n_features': len(X.columns),
+                'n_labels': len(labels_df),
+                'metrics': {
+                    'accuracy': accuracy,
+                    'precision': 0,
+                    'recall': 0,
+                    'f1': 0,
+                    'auc': 0
+                },
+                'backtest': bt_results if 'bt_results' in locals() and bt_results else {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0},
+                'risk': mc_results
+            }
+            
+            report_gen = ReportGenerator(Path('templates'))
+            output_dir = reporting_config.get('output_dir', 'outputs/reports')
+            report_path = Path(output_dir) / f"{cfg.experiment.name}_report.html"
+            report_gen.generate_report(results, report_path, dict(cfg))
+        else:
+            logger.info("Reporting disabled in config")
         
         mlflow.log_artifact(str(report_path))
         
