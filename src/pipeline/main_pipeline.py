@@ -75,13 +75,13 @@ def run_pipeline(cfg: DictConfig) -> None:
     logger.info(f"Starting pipeline: {cfg.experiment.name}")
     logger.info("=" * 80)
     
-        with mlflow.start_run():
-            # Log model backend
-            model_backend = cfg.models.model.get('backend', 'cpu')
-            mlflow.log_param('model_backend', model_backend)
-            mlflow.log_param('available_backends', ','.join(available_backends))
-            
-            # Log basic config (TP/SL will be logged later based on distance_mode)
+    with mlflow.start_run():
+        # Log model backend
+        model_backend = cfg.models.model.get('backend', 'cpu')
+        mlflow.log_param('model_backend', model_backend)
+        mlflow.log_param('available_backends', ','.join(available_backends))
+        
+        # Log basic config (TP/SL will be logged later based on distance_mode)
         asset_symbol = cfg.assets.get('symbol', cfg.assets.get('asset', {}).get('symbol', 'UNKNOWN'))
         triple_barrier_cfg = cfg.labeling.get('triple_barrier', {}) if 'labeling' in cfg else {}
         distance_mode = triple_barrier_cfg.get('distance_mode', 'ticks')
