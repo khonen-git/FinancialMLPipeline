@@ -23,13 +23,16 @@ dependencies:
       - mypy>=1.5.0
 
 # Optional GPU support (uncomment if needed)
-# For RAPIDS cuML/cuDF, use:
-# - cudatoolkit=11.8
-# - pip:
-#     - cudf-cu11
-#     - cuml-cu11
+# For RAPIDS cuML with RTX 4070 (CUDA 12.x), use:
+# 
+# Option 1: Install via micromamba (recommended)
+# micromamba install -c rapidsai -c conda-forge -c nvidia \
+#     cuml=24.02 cudatoolkit=12.4 python=3.12
 #
-# Or install via conda:
-# conda install -c rapidsai -c conda-forge -c nvidia \
-#     cuml=24.02 cudatoolkit=11.8 python=3.12
+# Option 2: Add to dependencies (uncomment below)
+# - cudatoolkit=12.4
+# - cuml=24.02
+#
+# Note: RTX 4070 supports CUDA 12.x, so use cudatoolkit=12.4
+# Verify CUDA version: nvidia-smi
 

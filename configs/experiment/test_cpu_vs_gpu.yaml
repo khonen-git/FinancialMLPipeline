@@ -1,0 +1,96 @@
+# @package _global_
+# Test experiment to compare CPU vs GPU RandomForest performance
+# Simple configuration for quick testing
+
+experiment:
+  name: "test_cpu_vs_gpu_comparison"
+  description: "Quick test to compare CPU vs GPU RandomForest - 100-tick bars, small dataset"
+  seed: 42
+  tags: ["test", "cpu_vs_gpu", "comparison", "100ticks"]
+  audit_data_leakage: false
+
+assets:
+  symbol: "EURUSD"
+  tick_size: 0.00001
+  pip_value: 0.0001
+  min_lot: 0.01
+  max_lot: 100.0
+
+session:
+  timezone: "UTC"
+  session_start: "00:00"
+  session_end: "21:55"
+  friday_end: "20:00"
+  weekend_trading: false
+
+data:
+  dukascopy:
+    raw_dir: "data/raw"
+    filename: "EURUSD_2023.csv"  # Use your data file
+    format: "csv"
+  bars:
+    type: "tick"
+    threshold: 100  # 100 ticks per bar
+
+labeling:
+  triple_barrier:
+    distance_mode: "ticks"  # Simple ticks mode for quick test
+    tp_ticks: 50
+    sl_ticks: 50
+    max_horizon_bars: 20
+    min_horizon_bars: 10
+
+features:
+  returns_lookbacks: [1, 5, 10]
+  volatility_lookbacks: [10, 20]
+  range_lookbacks: [10]
+  spread_stats_lookbacks: [5]
+  order_flow_lookbacks: [5]
+
+models:
+  # Model backend will be overridden via command line:
+  # CPU: +models=rf_cpu
+  # GPU: +models=rf_gpu
+  model:
+    name: "rf_cpu"  # Default, override with +models=rf_gpu
+    type: "random_forest"
+    backend: "cpu"  # Will be "gpu" when using rf_gpu config
+    params:
+      n_estimators: 100  # Reduced for quick test
+      max_depth: 8
+      min_samples_leaf: 5
+      n_jobs: -1
+      class_weight: "balanced"
+    calibration:
+      enabled: false
+
+  hmm:
+    macro:
+      enabled: false
+    micro:
+      enabled: false
+
+  meta:
+    enabled: true  # Enable meta-model for comparison
+
+validation:
+  cv_type: "time_series"  # Use TSCV for quick test
+  n_splits: 3  # Reduced folds for quick test
+  test_size: 10000  # Fixed test size
+  gap: 100
+
+backtest:
+  enabled: false  # Disable backtest for quick comparison
+  data:
+    filename: null
+
+risk:
+  monte_carlo:
+    enabled: false
+
+reporting:
+  enabled: false  # Disable reporting for quick test
+
+benchmarks:
+  enabled: false  # Disable benchmarks for quick test
+
