@@ -1,6 +1,11 @@
 # Bar construction configuration
 
 bars:
+  type: "tick"
+  threshold: 100
+  backend: "optimized"  # Options: pandas, optimized (Numba), polars, cudf (GPU)
+  
+  # Legacy config (for backward compatibility)
   main_type: "tick1000"
   available:
     - "tick100"

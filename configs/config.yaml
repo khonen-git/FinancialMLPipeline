@@ -7,7 +7,7 @@ defaults:
   - session: default_fx
   - labeling: triple_barrier
   - features: base_features
-  - models: rf_cpu
+  - models: rf_gpu  # GPU by default for training
   - validation: tscv
   - risk: basic
   - backtest: base_bt

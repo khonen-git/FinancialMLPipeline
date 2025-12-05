@@ -11,7 +11,7 @@ from omegaconf import DictConfig
 import pandas as pd
 
 from src.labeling.session_calendar import SessionCalendar
-from src.data.bars import BarBuilder
+from src.data.bar_factory import create_bar_builder, get_available_backends
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,12 @@ def build_bars(ticks: pd.DataFrame, cfg: DictConfig) -> Tuple[pd.DataFrame, Sess
     
     # Step 4: Bar construction
     logger.info("Step 4: Bar construction")
-    bar_builder = BarBuilder(cfg.data.bars)
+    # Get backend from config (default: 'optimized' for performance)
+    bar_backend = cfg.data.bars.get('backend', 'optimized')
+    available_backends = get_available_backends()
+    logger.info(f"Available bar backends: {available_backends}, using: {bar_backend}")
+    
+    bar_builder = create_bar_builder(cfg.data.bars, backend=bar_backend)
     bars = bar_builder.build_bars(ticks)
     logger.info(f"Built {len(bars)} bars")
     
