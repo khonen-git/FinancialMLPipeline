@@ -23,6 +23,14 @@ from ..utils.helpers import convert_ticks_to_price
 
 logger = logging.getLogger(__name__)
 
+# Try to import optimized version
+try:
+    from .triple_barrier_optimized import compute_triple_barrier_optimized
+    _OPTIMIZED_AVAILABLE = True
+except ImportError:
+    _OPTIMIZED_AVAILABLE = False
+    compute_triple_barrier_optimized = None
+
 
 def compute_triple_barrier(
     events: pd.DataFrame,
@@ -368,17 +376,29 @@ class TripleBarrierLabeler:
             'bar_index': bar_positions
         })
         
-        # Single call to the core function
-        labels = compute_triple_barrier(
-            events=events,
-            prices=bars,
-            tp_distance=self.tp_distance,
-            sl_distance=self.sl_distance,
-            max_horizon_bars=self.max_horizon_bars,
-            session_calendar=self.calendar,
-            min_horizon_bars=self.min_horizon_bars,
-            avg_bar_duration_sec=avg_bar_duration_sec
-        )
+        # Use optimized version if available, otherwise fallback to standard
+        if _OPTIMIZED_AVAILABLE:
+            labels = compute_triple_barrier_optimized(
+                events=events,
+                prices=bars,
+                tp_distance=self.tp_distance,
+                sl_distance=self.sl_distance,
+                max_horizon_bars=self.max_horizon_bars,
+                session_calendar=self.calendar,
+                min_horizon_bars=self.min_horizon_bars,
+                avg_bar_duration_sec=avg_bar_duration_sec
+            )
+        else:
+            labels = compute_triple_barrier(
+                events=events,
+                prices=bars,
+                tp_distance=self.tp_distance,
+                sl_distance=self.sl_distance,
+                max_horizon_bars=self.max_horizon_bars,
+                session_calendar=self.calendar,
+                min_horizon_bars=self.min_horizon_bars,
+                avg_bar_duration_sec=avg_bar_duration_sec
+            )
         
         # Add a reference bar timestamp for alignment
         if len(labels) > 0 and 'bar_index_start' in labels.columns:
