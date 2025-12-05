@@ -43,7 +43,8 @@ def get_gpu_info():
         
         for i in range(device_count):
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            name = pynvml.nvmlDeviceGetName(handle).decode('utf-8')
+            name_bytes = pynvml.nvmlDeviceGetName(handle)
+            name = name_bytes.decode('utf-8') if isinstance(name_bytes, bytes) else name_bytes
             mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
             
             gpu_info['devices'].append({
@@ -135,9 +136,8 @@ def profile_pipeline(cfg: DictConfig):
         print("💻 CPU profiling mode")
     
     # Ensure profiling is enabled in the config for integrated profiling
-    if 'runtime' not in cfg:
-        cfg.runtime = DictConfig({})
-    cfg.runtime.profile = True
+    # Note: We don't modify cfg directly as it may be in struct mode
+    # Profiling is handled by cProfile in this script
     
     # Generate a unique filename for the profile output
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
