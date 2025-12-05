@@ -14,6 +14,7 @@ but the individual MFE/MAE values should NEVER be used as model features.
 """
 
 import logging
+from typing import Optional
 import pandas as pd
 import numpy as np
 
@@ -101,7 +102,8 @@ if NUMBA_AVAILABLE:
 def compute_mfe_mae(
     bars: pd.DataFrame,
     horizon_bars: int = 32,
-    quantile: float = 0.5
+    quantile: float = 0.5,
+    tick_size: Optional[float] = None
 ) -> pd.DataFrame:
     """Compute MFE and MAE for each bar over a fixed horizon.
     
@@ -165,14 +167,19 @@ def compute_mfe_mae(
         mfe_quantile = valid_mfe.quantile(quantile)
         mae_quantile = valid_mae.quantile(quantile)
         
-        # For EURUSD: 1 pip = 0.0001, 1 tick = 0.00001
-        # So to convert to ticks, divide by 0.00001 (or divide by 0.0001 and multiply by 10)
-        tick_size_actual = 0.00001  # Fractional pip for EURUSD
+        # Use tick_size from config if provided, otherwise use default for logging
+        if tick_size is not None:
+            tick_size_actual = tick_size
+            pip_size = tick_size * 10 if tick_size < 0.0001 else tick_size  # Assume pip = 10 ticks for EURUSD
+        else:
+            # Fallback for logging only (should not happen in production)
+            tick_size_actual = 0.00001  # Default for EURUSD
+            pip_size = 0.0001
         
-        logger.info(f"MFE quantile {quantile:.1f}: {mfe_quantile:.5f} ({mfe_quantile/tick_size_actual:.1f} ticks, {mfe_quantile/0.0001:.1f} pips)")
-        logger.info(f"MAE quantile {quantile:.1f}: {mae_quantile:.5f} ({mae_quantile/tick_size_actual:.1f} ticks, {mae_quantile/0.0001:.1f} pips)")
-        logger.info(f"Suggested TP (MFE q{quantile}): {mfe_quantile/tick_size_actual:.0f} ticks = {mfe_quantile/0.0001:.1f} pips")
-        logger.info(f"Suggested SL (MAE q{quantile}): {mae_quantile/tick_size_actual:.0f} ticks = {mae_quantile/0.0001:.1f} pips")
+        logger.info(f"MFE quantile {quantile:.1f}: {mfe_quantile:.5f} ({mfe_quantile/tick_size_actual:.1f} ticks, {mfe_quantile/pip_size:.1f} pips)")
+        logger.info(f"MAE quantile {quantile:.1f}: {mae_quantile:.5f} ({mae_quantile/tick_size_actual:.1f} ticks, {mae_quantile/pip_size:.1f} pips)")
+        logger.info(f"Suggested TP (MFE q{quantile}): {mfe_quantile/tick_size_actual:.0f} ticks = {mfe_quantile/pip_size:.1f} pips")
+        logger.info(f"Suggested SL (MAE q{quantile}): {mae_quantile/tick_size_actual:.0f} ticks = {mae_quantile/pip_size:.1f} pips")
     
     return features
 

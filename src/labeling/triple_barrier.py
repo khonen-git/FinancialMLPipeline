@@ -293,7 +293,7 @@ class TripleBarrierLabeler:
             
             # Compute MFE/MAE for quantile analysis (NOT as features - uses future data)
             from .mfe_mae import compute_mfe_mae
-            mfe_mae_data = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=tp_quantile)
+            mfe_mae_data = compute_mfe_mae(bars, horizon_bars=horizon_bars, quantile=tp_quantile, tick_size=tick_size)
             
             # Extract MFE and MAE quantiles for TP/SL suggestion
             valid_mfe = mfe_mae_data['mfe'].dropna()
