@@ -20,8 +20,9 @@ The project implements a session-aware, raw-spread FX trading system with:
 
 1. 📖 **[HOW_TO_RUN.md](HOW_TO_RUN.md)** - Setup and execution guide
 2. 🏗️ **[ARCHITECTURE.md](ARCHITECTURE.md)** - High-level system overview
-3. ⚙️ **[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)** - Hydra configuration reference
-4. 📚 **[GLOSSARY.md](GLOSSARY.md)** - Key terms and concepts
+3. 📊 **[ARCHITECTURE_DIAGRAMS.md](ARCHITECTURE_DIAGRAMS.md)** - Visual architecture diagrams (Mermaid)
+4. ⚙️ **[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)** - Hydra configuration reference
+5. 📚 **[GLOSSARY.md](GLOSSARY.md)** - Key terms and concepts
 
 ---
 
@@ -88,6 +89,24 @@ The project implements a session-aware, raw-spread FX trading system with:
   - MLflow artifact integration
   - Report sections
 
+- **[TESTING.md](TESTING.md)**
+  - Test types and organization
+  - Unit, integration, and E2E tests
+  - Regression testing strategy
+  - Performance testing guidelines
+
+- **[PROFILING.md](PROFILING.md)**
+  - Performance profiling with cProfile
+  - Identifying bottlenecks
+  - Optimization strategies (Numba, vectorization)
+  - Memory profiling
+
+- **[BENCHMARKING.md](BENCHMARKING.md)**
+  - Baseline strategy implementations
+  - Statistical significance testing
+  - Performance comparison framework
+  - Extended metrics (Sortino, Calmar, etc.)
+
 ---
 
 ## 📖 Reference
@@ -135,6 +154,8 @@ All components respect these **hard constraints**:
 - Bid/ask execution (no mid-price)
 - Config integrity (document new keys)
 - API stability (update tests when changing signatures)
+- Test coverage (see [TESTING.md](TESTING.md))
+- Performance considerations (see [PROFILING.md](PROFILING.md))
 
 ---
 
@@ -147,6 +168,7 @@ docs/
 │
 ├── HOW_TO_RUN.md                # Quick start guide
 ├── ARCHITECTURE.md              # System overview
+├── ARCHITECTURE_DIAGRAMS.md     # Visual diagrams (Mermaid)
 │
 ├── ARCH_DATA_PIPELINE.md        # Data flow
 ├── ARCH_ML_PIPELINE.md          # Model training
@@ -158,7 +180,10 @@ docs/
 ├── CONFIG_REFERENCE.md          # Config reference
 ├── DATA_HANDLING.md             # Data processing
 ├── REPRODUCIBILITY.md           # Reproducibility
-└── REPORTING.md                 # Report generation
+├── REPORTING.md                 # Report generation
+├── TESTING.md                   # Testing strategy
+├── PROFILING.md                 # Performance profiling
+└── BENCHMARKING.md              # Benchmarking guide
 ```
 
 ---
