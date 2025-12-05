@@ -6,6 +6,7 @@ Handles:
 """
 
 import logging
+from typing import Tuple
 from omegaconf import DictConfig
 import pandas as pd
 
@@ -15,7 +16,7 @@ from src.data.bars import BarBuilder
 logger = logging.getLogger(__name__)
 
 
-def build_bars(ticks: pd.DataFrame, cfg: DictConfig) -> tuple[pd.DataFrame, SessionCalendar]:
+def build_bars(ticks: pd.DataFrame, cfg: DictConfig) -> Tuple[pd.DataFrame, SessionCalendar]:
     """Build bars from ticks and initialize session calendar.
     
     Args:
