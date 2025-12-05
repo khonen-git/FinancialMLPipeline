@@ -1,0 +1,53 @@
+# Benchmark baseline strategies configuration
+
+benchmarks:
+  enabled: false  # Set to true to enable benchmark comparisons
+  
+  strategies:
+    buy_and_hold:
+      enabled: true
+      description: "Buy and hold baseline"
+    
+    random:
+      enabled: true
+      seed: 42
+      long_only: true
+      description: "Random strategy (null hypothesis)"
+    
+    ma_crossover:
+      enabled: true
+      short_period: 10
+      long_period: 50
+      description: "Moving average crossover"
+    
+    rsi:
+      enabled: false
+      period: 14
+      oversold: 30
+      overbought: 70
+      description: "RSI-based mean reversion"
+  
+  statistical_tests:
+    enabled: true
+    tests:
+      - t_test
+      - mann_whitney
+    significance_level: 0.05
+    use_bootstrap: true
+  
+  metrics:
+    extended: true  # Calculate extended metrics (Sortino, Calmar, etc.)
+    basic:
+      - sharpe_ratio
+      - total_return
+      - max_drawdown
+      - win_rate
+      - total_trades
+    extended_list:
+      - sortino_ratio
+      - calmar_ratio
+      - profit_factor
+      - expectancy
+      - recovery_factor
+      - ulcer_index
+
