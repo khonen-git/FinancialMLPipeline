@@ -71,6 +71,11 @@ def run_pipeline(cfg: DictConfig) -> None:
     # Setup logging with MLflow handler (logs will be saved to MLflow artifacts)
     mlflow_log_handler = setup_logging(log_level, mlflow_log_handler=None)
     
+    # Log available backends
+    from src.models.model_factory import get_available_backends
+    available_backends = get_available_backends()
+    logger.info(f"Available model backends: {available_backends}")
+    
     logger.info("=" * 80)
     logger.info(f"Starting pipeline: {cfg.experiment.name}")
     logger.info("=" * 80)
@@ -929,6 +934,7 @@ def run_pipeline(cfg: DictConfig) -> None:
         # Step 13: Generate report
         logger.info("Step 13: Generating report")
         reporting_config = cfg.get('reporting', {})
+        report_path = None
         if reporting_config.get('enabled', True):
             results = {
                 'n_samples': len(X),
@@ -949,10 +955,9 @@ def run_pipeline(cfg: DictConfig) -> None:
             output_dir = reporting_config.get('output_dir', 'outputs/reports')
             report_path = Path(output_dir) / f"{cfg.experiment.name}_report.html"
             report_gen.generate_report(results, report_path, dict(cfg))
+            mlflow.log_artifact(str(report_path))
         else:
             logger.info("Reporting disabled in config")
-        
-        mlflow.log_artifact(str(report_path))
         
         # Save logs to MLflow artifacts (as per ARCH_INFRA.md §9)
         if mlflow_log_handler is not None:

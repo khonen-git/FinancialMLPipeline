@@ -26,7 +26,7 @@ if ! command -v nvidia-smi &> /dev/null; then
     echo "⚠️  Warning: nvidia-smi not found. GPU may not be available."
 else
     echo "📊 GPU Information:"
-    nvidia-smi --query-gpu=name,driver_version,cuda_version --format=csv,noheader
+    nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
     echo ""
 fi
 
