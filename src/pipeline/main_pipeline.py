@@ -41,6 +41,8 @@ from src.validation.cpcv import CombinatorialPurgedCV
 from src.backtest.runner import run_backtest
 from src.risk.monte_carlo import run_monte_carlo_simulation, analyze_prop_firm_constraints
 from src.reporting.report_generator import ReportGenerator
+from src.benchmarks.benchmark_runner import BenchmarkRunner
+from src.benchmarks.baselines import BuyAndHold, RandomStrategy, MovingAverageCrossover, RSIStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -771,6 +773,116 @@ def run_pipeline(cfg: DictConfig) -> None:
         else:
             logger.info("Backtesting disabled in config")
             bt_results = {'total_trades': 0, 'win_rate': 0, 'sharpe_ratio': 0, 'max_drawdown': 0}
+        
+        # Step 11b: Benchmark Comparisons
+        benchmark_results = None
+        if cfg.get('benchmarks', {}).get('enabled', False):
+            logger.info("=" * 80)
+            logger.info("Step 11b: Running benchmark strategies")
+            logger.info("=" * 80)
+            
+            try:
+                # Get bars for benchmarking (use backtest bars if available, otherwise training bars)
+                benchmark_bars = backtest_bars_aligned if 'backtest_bars_aligned' in locals() and len(backtest_bars_aligned) > 0 else bars_for_backtest if 'bars_for_backtest' in locals() and len(bars_for_backtest) > 0 else bars
+                
+                if len(benchmark_bars) == 0:
+                    logger.warning("No bars available for benchmarking, skipping")
+                else:
+                    # Initialize benchmark runner
+                    benchmark_runner = BenchmarkRunner(
+                        bars=benchmark_bars,
+                        session_calendar=calendar,
+                        config=dict(cfg),
+                        labeling_config=dict(cfg.labeling.triple_barrier),
+                        assets_config=dict(cfg.assets)
+                    )
+                    
+                    # Build enabled strategies
+                    strategies = {}
+                    benchmark_config = cfg.benchmarks
+                    
+                    if benchmark_config.get('strategies', {}).get('buy_and_hold', {}).get('enabled', False):
+                        strategies['buy_and_hold'] = BuyAndHold()
+                    
+                    if benchmark_config.get('strategies', {}).get('random', {}).get('enabled', False):
+                        random_config = benchmark_config.get('strategies', {}).get('random', {})
+                        strategies['random'] = RandomStrategy(
+                            seed=random_config.get('seed', 42),
+                            long_only=random_config.get('long_only', True)
+                        )
+                    
+                    if benchmark_config.get('strategies', {}).get('ma_crossover', {}).get('enabled', False):
+                        ma_config = benchmark_config.get('strategies', {}).get('ma_crossover', {})
+                        strategies['ma_crossover'] = MovingAverageCrossover(
+                            short_period=ma_config.get('short_period', 10),
+                            long_period=ma_config.get('long_period', 50)
+                        )
+                    
+                    if benchmark_config.get('strategies', {}).get('rsi', {}).get('enabled', False):
+                        rsi_config = benchmark_config.get('strategies', {}).get('rsi', {})
+                        strategies['rsi'] = RSIStrategy(
+                            period=rsi_config.get('period', 14),
+                            oversold=rsi_config.get('oversold', 30),
+                            overbought=rsi_config.get('overbought', 70)
+                        )
+                    
+                    if len(strategies) > 0:
+                        # Run benchmark comparisons
+                        use_extended = benchmark_config.get('metrics', {}).get('extended', True)
+                        benchmark_comparison = benchmark_runner.compare_strategies(
+                            strategies=strategies,
+                            use_extended_metrics=use_extended
+                        )
+                        
+                        # Log benchmark results to MLflow
+                        for _, row in benchmark_comparison.iterrows():
+                            strategy_name = row['strategy']
+                            mlflow.log_metric(f"benchmark_{strategy_name}_sharpe", row['sharpe_ratio'])
+                            mlflow.log_metric(f"benchmark_{strategy_name}_return", row['total_return'])
+                            mlflow.log_metric(f"benchmark_{strategy_name}_max_drawdown", row['max_drawdown'])
+                            mlflow.log_metric(f"benchmark_{strategy_name}_win_rate", row['win_rate'])
+                            mlflow.log_metric(f"benchmark_{strategy_name}_total_trades", row['total_trades'])
+                            
+                            if use_extended:
+                                if 'sortino_ratio' in row:
+                                    mlflow.log_metric(f"benchmark_{strategy_name}_sortino", row['sortino_ratio'])
+                                if 'calmar_ratio' in row:
+                                    mlflow.log_metric(f"benchmark_{strategy_name}_calmar", row['calmar_ratio'])
+                                if 'profit_factor' in row:
+                                    mlflow.log_metric(f"benchmark_{strategy_name}_profit_factor", row['profit_factor'])
+                        
+                        # Save comparison CSV
+                        comparison_path = Path('benchmark_comparison.csv')
+                        benchmark_comparison.to_csv(comparison_path, index=False)
+                        mlflow.log_artifact(str(comparison_path))
+                        
+                        # Compare model to baselines if we have model backtest results
+                        if 'bt_results' in locals() and bt_results and 'trade_log' in bt_results:
+                            logger.info("Comparing model to baseline strategies")
+                            comparison_summary = benchmark_runner.compare_model_to_baselines(
+                                model_results=bt_results,
+                                baseline_strategies=strategies,
+                                use_statistical_tests=benchmark_config.get('statistical_tests', {}).get('enabled', True),
+                                significance_level=benchmark_config.get('statistical_tests', {}).get('significance_level', 0.05)
+                            )
+                            
+                            # Log statistical test results
+                            for baseline_name, test_results in comparison_summary.get('statistical_tests', {}).items():
+                                if 't_test' in test_results:
+                                    mlflow.log_metric(f"stat_test_{baseline_name}_t_pvalue", test_results['t_test']['p_value'])
+                                    mlflow.log_metric(f"stat_test_{baseline_name}_t_significant", float(test_results['t_test_significant']))
+                                if 'mann_whitney' in test_results:
+                                    mlflow.log_metric(f"stat_test_{baseline_name}_mw_pvalue", test_results['mann_whitney']['p_value'])
+                                    mlflow.log_metric(f"stat_test_{baseline_name}_mw_significant", float(test_results['mann_whitney_significant']))
+                            
+                            benchmark_results = comparison_summary
+                        
+                        logger.info("Benchmark comparisons completed successfully")
+                    else:
+                        logger.warning("No benchmark strategies enabled in config")
+            except Exception as e:
+                logger.error(f"Benchmarking failed: {e}", exc_info=True)
+                benchmark_results = None
         
         # Step 12: Risk analysis
         logger.info("Step 12: Risk analysis")
