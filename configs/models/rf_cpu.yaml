@@ -3,7 +3,7 @@
 model:
   name: "rf_cpu"
   type: "random_forest"
-  backend: "sklearn"
+  backend: "cpu"  # or "sklearn" (both supported)
   
   params:
     n_estimators: 200

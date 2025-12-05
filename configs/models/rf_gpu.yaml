@@ -3,7 +3,7 @@
 model:
   name: "rf_gpu"
   type: "random_forest"
-  backend: "cuml"
+  backend: "gpu"  # or "cuml" (both supported)
   
   params:
     n_estimators: 200

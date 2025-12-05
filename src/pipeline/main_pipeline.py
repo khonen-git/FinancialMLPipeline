@@ -35,7 +35,7 @@ from src.features.bars_stats import create_bar_stats_features
 from src.features.hmm_features import create_macro_hmm_features, create_micro_hmm_features
 from src.models.hmm_macro import MacroHMM
 from src.models.hmm_micro import MicroHMM
-from src.models.rf_cpu import RandomForestCPU
+from src.models.model_factory import create_random_forest
 from src.validation.tscv import TimeSeriesCV
 from src.validation.cpcv import CombinatorialPurgedCV
 from src.backtest.runner import run_backtest
@@ -75,8 +75,13 @@ def run_pipeline(cfg: DictConfig) -> None:
     logger.info(f"Starting pipeline: {cfg.experiment.name}")
     logger.info("=" * 80)
     
-    with mlflow.start_run():
-        # Log basic config (TP/SL will be logged later based on distance_mode)
+        with mlflow.start_run():
+            # Log model backend
+            model_backend = cfg.models.model.get('backend', 'cpu')
+            mlflow.log_param('model_backend', model_backend)
+            mlflow.log_param('available_backends', ','.join(available_backends))
+            
+            # Log basic config (TP/SL will be logged later based on distance_mode)
         asset_symbol = cfg.assets.get('symbol', cfg.assets.get('asset', {}).get('symbol', 'UNKNOWN'))
         triple_barrier_cfg = cfg.labeling.get('triple_barrier', {}) if 'labeling' in cfg else {}
         distance_mode = triple_barrier_cfg.get('distance_mode', 'ticks')
@@ -299,9 +304,17 @@ def run_pipeline(cfg: DictConfig) -> None:
                     )
                 
                 # Train Primary Model (direction: 1 vs -1)
-                primary_model = RandomForestCPU(cfg.models.model)
+                # Use factory to create CPU or GPU model based on config
+                import time
+                fit_start = time.time()
+                primary_model = create_random_forest(dict(cfg.models.model))
                 primary_model.fit(X_train, y_train)
+                fit_time = time.time() - fit_start
                 primary_models.append(primary_model)
+                
+                # Log training time per fold
+                mlflow.log_metric(f'fold_{fold}_fit_time', fit_time)
+                logger.info(f"Fold {fold}: Model training took {fit_time:.2f}s")
                 
                 # Evaluate with multiple metrics (not just accuracy)
                 y_pred = primary_model.predict(X_test)
@@ -436,7 +449,8 @@ def run_pipeline(cfg: DictConfig) -> None:
                             y_meta_test = meta_labels_aligned.iloc[test_idx]
                             
                             # Train Meta Model
-                            meta_model = RandomForestCPU(cfg.models.model)
+                            # Use factory to create CPU or GPU model based on config
+                            meta_model = create_random_forest(dict(cfg.models.model))
                             meta_model.fit(X_meta_train, y_meta_train)
                             meta_models.append(meta_model)  # Store for backtesting
                             
