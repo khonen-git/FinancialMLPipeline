@@ -68,14 +68,8 @@ def engineer_features(bars: pd.DataFrame, cfg: DictConfig) -> pd.DataFrame:
         import mlflow
         mlflow.log_param('data_leakage_audit_safe', leakage_audit['is_safe'])
     
-    # Warn if MFE/MAE features are enabled (data leakage)
-    mfe_mae_enabled = cfg.features.get('mfe_mae', {}).get('enabled', False) if 'features' in cfg else False
-    if mfe_mae_enabled:
-        logger.warning(
-            "⚠️ MFE/MAE features are disabled to prevent data leakage. "
-            "MFE/MAE uses future data and should only be used for TP/SL parameter selection, "
-            "not as model features. Use distance_mode='mfe_mae' in labeling.triple_barrier instead."
-        )
+    # MFE/MAE are NOT features - they use future data and should only be used for TP/SL selection
+    # This check is kept for backward compatibility but MFE/MAE should never be in features config
     
     return all_features
 
