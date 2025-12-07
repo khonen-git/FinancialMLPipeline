@@ -113,6 +113,12 @@ The project implements a session-aware, raw-spread FX trading system with:
   - Configuration Docker et docker-compose
   - Dépannage et bonnes pratiques
 
+- **[GPU_SETUP.md](GPU_SETUP.md)**
+  - GPU setup guide for RAPIDS cuML and cuDF
+  - CUDA version detection and compatibility
+  - Installation instructions for all NVIDIA GPUs
+  - Troubleshooting GPU issues
+
 ---
 
 ## 📖 Reference
@@ -189,7 +195,9 @@ docs/
 ├── REPORTING.md                 # Report generation
 ├── TESTING.md                   # Testing strategy
 ├── PROFILING.md                 # Performance profiling
-└── BENCHMARKING.md              # Benchmarking guide
+├── BENCHMARKING.md              # Benchmarking guide
+├── GPU_SETUP.md                 # GPU setup and RAPIDS installation
+└── DEPLOYMENT_API.md            # API deployment guide
 ```
 
 ---
