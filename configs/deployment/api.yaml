@@ -1,0 +1,28 @@
+# API deployment configuration
+
+deployment:
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8000
+    
+    # MLflow configuration
+    mlflow:
+      tracking_uri: "${MLFLOW_TRACKING_URI:file:./mlruns}"
+      experiment_name: "financial_ml"
+    
+    # CORS configuration
+    cors:
+      allow_origins: ["*"]  # In production, specify allowed origins
+      allow_credentials: true
+      allow_methods: ["*"]
+      allow_headers: ["*"]
+    
+    # Model caching
+    cache:
+      enabled: true
+      max_models: 10  # Maximum number of models to cache in memory
+    
+    # Logging
+    log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+

@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  mlflow-server:
+    image: ghcr.io/mlflow/mlflow:v2.8.1
+    container_name: financial-ml-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlflow/mlruns
+      - ./mlflow.db:/mlflow/mlflow.db
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlflow/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=file:///mlflow/mlruns
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow/mlflow.db --default-artifact-root file:///mlflow/mlruns
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - financial-ml-network
+
+  inference-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.inference
+    container_name: financial-ml-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../mlruns:/app/mlruns:ro
+      - ../data:/app/data:ro
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+      - PYTHONPATH=/app
+    depends_on:
+      mlflow-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - financial-ml-network
+
+networks:
+  financial-ml-network:
+    driver: bridge
+

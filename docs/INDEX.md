@@ -107,6 +107,12 @@ The project implements a session-aware, raw-spread FX trading system with:
   - Performance comparison framework
   - Extended metrics (Sortino, Calmar, etc.)
 
+- **[DEPLOYMENT_API.md](DEPLOYMENT_API.md)**
+  - Guide de déploiement de l'API d'inférence
+  - Endpoints et exemples d'utilisation
+  - Configuration Docker et docker-compose
+  - Dépannage et bonnes pratiques
+
 ---
 
 ## 📖 Reference

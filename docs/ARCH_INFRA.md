@@ -291,3 +291,25 @@ Guidelines:
 - separate logs per module
 - include timestamp, module, and experiment ID
 - logs should be stored inside mlflow artifacts for each run
+
+---
+
+## 10. Deployment Strategy
+
+The project implements an on-premise inference API for serving MLflow-trained models.
+
+**Current implementation**:
+- ✅ FastAPI-based inference API (`src/deployment/api/`)
+- ✅ Model loader with MLflow integration (`src/deployment/model_loader.py`)
+- ✅ Docker support for inference (`docker/Dockerfile.inference`)
+- ✅ Docker Compose for on-premise deployment (`docker/docker-compose.yml`)
+- ✅ MLflow local tracking
+- ✅ Health checks and monitoring endpoints
+
+**API Endpoints**:
+- `POST /predict` - Single prediction
+- `POST /predict/batch` - Batch predictions
+- `GET /health` - Health check
+- `GET /models` - List available models
+
+For detailed API documentation, see **[DEPLOYMENT_API.md](DEPLOYMENT_API.md)**.

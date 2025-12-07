@@ -586,7 +586,48 @@ runtime:
 
 ---
 
-## 17. AI Guardrails for Configuration
+## 17. Deployment / API Configuration
+
+**File**: `configs/deployment/api.yaml`
+
+```yaml
+deployment:
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8000
+    
+    mlflow:
+      tracking_uri: "${MLFLOW_TRACKING_URI:file:./mlruns}"
+      experiment_name: "financial_ml"
+    
+    cors:
+      allow_origins: ["*"]
+      allow_credentials: true
+      allow_methods: ["*"]
+      allow_headers: ["*"]
+    
+    cache:
+      enabled: true
+      max_models: 10
+    
+    log_level: "INFO"
+```
+
+**Key settings**:
+
+- `host`: Host to bind the API server to (default: "0.0.0.0" for all interfaces)
+- `port`: Port to bind the API server to (default: 8000)
+- `mlflow.tracking_uri`: MLflow tracking URI (can use environment variable)
+- `mlflow.experiment_name`: Default experiment name to search for models
+- `cors.allow_origins`: CORS allowed origins (use specific domains in production)
+- `cache.enabled`: Enable in-memory model caching
+- `cache.max_models`: Maximum number of models to cache
+- `log_level`: API logging level (DEBUG, INFO, WARNING, ERROR)
+
+---
+
+## 18. AI Guardrails for Configuration
 
 To avoid configuration chaos when using AI assistants:
 
