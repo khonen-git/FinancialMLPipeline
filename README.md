@@ -253,7 +253,7 @@ If you use this pipeline in your research or trading, please reference:
 
 ## 📄 License
 
-[Add your license here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
@@ -270,7 +270,7 @@ Contributions are welcome! Please:
 
 ## 📧 Contact
 
-[Add contact information]
+khonen.pro@gmail.com
 
 ---
 
